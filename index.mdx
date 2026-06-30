@@ -1,20 +1,45 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "ENS Documentation"
+sidebarTitle: "Home"
+description: "Everything you need to build with ENS — register names, resolve addresses, manage records, and integrate ENS into your dApp."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+ENS (Ethereum Name Service) is a decentralized, open naming protocol built on Ethereum that maps human-readable names like `alice.eth` to machine-readable identifiers — Ethereum addresses, multi-chain addresses, content hashes, and arbitrary metadata.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Introduction" icon="book-open" href="/introduction">
+    Learn what ENS is, why it exists, and how names work across the protocol.
+  </Card>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Integrate ENS into your dApp in minutes using wagmi and viem.
+  </Card>
+  <Card title="Protocol & Concepts" icon="network-wired" href="/concepts/protocol">
+    Dive into the registry, resolvers, namehash, and the full ENS architecture.
+  </Card>
+  <Card title="Managing Records" icon="pen-to-square" href="/guides/records">
+    Set ETH addresses, multi-chain addresses, text records, and content hashes.
+  </Card>
+  <Card title="Smart Contracts" icon="file-contract" href="/contracts/overview">
+    Explore the registry, registrars, resolvers, and NameWrapper contracts.
+  </Card>
+  <Card title="ENS DAO" icon="landmark" href="/dao/overview">
+    Learn about ENS governance, the $ENS token, and how to participate.
+  </Card>
+</CardGroup>
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+## How ENS Works
+
+<Steps>
+  <Step title="Register a name">
+    Use the [ENS Manager App](https://app.ens.domains) or a compatible wallet to register a `.eth` name through the ETH Registrar smart contract. You pay a yearly fee in ETH — names are minted as ERC-721 NFTs directly to your wallet.
+  </Step>
+  <Step title="Set your records">
+    After registration, configure the records your name resolves to: your ETH address, addresses on other chains (Bitcoin, Solana, and more), text records like your Twitter handle or email, and a content hash for a decentralized website.
+  </Step>
+  <Step title="Set a primary name">
+    Enable reverse resolution by setting your primary name in the ENS Manager App. Apps and wallets that support ENS will then display your `.eth` name instead of your `0x` address whenever they encounter your account.
+  </Step>
+  <Step title="Build and integrate">
+    Use wagmi hooks, viem utilities, or ensjs to resolve names, look up records, and display ENS profiles inside your own dApp — no backend required.
+  </Step>
+</Steps>

@@ -1,0 +1,178 @@
+---
+title: "ENS Name Resolution: Forward, Reverse, and More"
+sidebarTitle: "Resolution"
+description: "Learn how ENS resolves names to addresses and records, including forward resolution, reverse resolution, wildcard support, and the Universal Resolver."
+---
+
+Name resolution is the process of converting a human-readable ENS name into a usable on-chain identifier — an Ethereum address, a Bitcoin address, a content hash, or any other record type. ENS resolution is entirely on-chain and permissionless: any client can perform it without relying on a centralized API.
+
+## How Forward Resolution Works
+
+Forward resolution converts a name like `alice.eth` into a record (most commonly an Ethereum address). The process follows three deterministic steps.
+
+<Steps>
+  <Step title="Compute the namehash">
+    Convert the name into a 32-byte node using the namehash algorithm. This recursively hashes each dot-separated label from right to left. Libraries handle this automatically when you pass a name string.
+
+    ```typescript
+    import { namehash } from 'viem/ens'
+
+    const node = namehash('alice.eth')
+    // 0x787192fc5378cc32aa956ddfdedbf26b24e8d78e40109add0eea2c1a012c3dec
+    ```
+  </Step>
+  <Step title="Query the Registry for the resolver">
+    Call `resolver(node)` on the ENS Registry contract. The Registry returns the address of the resolver contract assigned to this name.
+
+    ```solidity
+    address resolver = registry.resolver(node);
+    ```
+
+    If the Registry returns the zero address, the name has no resolver set and cannot be resolved.
+  </Step>
+  <Step title="Query the resolver for the record">
+    Call the appropriate function on the resolver contract. For an Ethereum address, call `addr(node)`. For a text record, call `text(node, key)`.
+
+    ```solidity
+    address ethAddress = resolver.addr(node);
+    string memory twitter = resolver.text(node, "com.twitter");
+    ```
+  </Step>
+</Steps>
+
+In practice, you call a single library function and it handles all three steps:
+
+```typescript
+import { createPublicClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+import { normalize } from 'viem/ens'
+
+const client = createPublicClient({ chain: mainnet, transport: http() })
+
+// Resolve a name to its Ethereum address
+const address = await client.getEnsAddress({ name: normalize('alice.eth') })
+
+// Resolve a text record
+const avatar = await client.getEnsText({ name: normalize('alice.eth'), key: 'avatar' })
+```
+
+<Note>
+  Always normalize names before resolving them. `normalize('Alice.ETH')` returns `'alice.eth'` — ENS names are case-insensitive and go through Unicode normalization (ENSIP-15) before hashing.
+</Note>
+
+## Reverse Resolution
+
+Reverse resolution converts an Ethereum address back into the name its owner has set as their **primary name**. This lets your app display `alice.eth` wherever it would otherwise show a raw address.
+
+The process queries a special ENS name built from the address: `<address>.addr.reverse`. For example, `0x225f...c3B5.addr.reverse`.
+
+```typescript
+// Resolve an address to its primary ENS name
+const name = await client.getEnsName({ address: '0x225f137127d9067788314bc7fcc1f36746a3c3B5' })
+// Returns: 'nick.eth' (if that address has set a primary name)
+```
+
+<Warning>
+  Always verify reverse resolution results. After getting a name from an address, resolve that name forward and confirm the resulting address matches the original. This guards against misconfigured or spoofed reverse records.
+</Warning>
+
+## The Universal Resolver
+
+The Universal Resolver is a single contract that wraps the entire three-step resolution flow — including wildcard resolution (ENSIP-10) and CCIP-Read (EIP-3668) — into one call. Use the Universal Resolver whenever you need to resolve names in your own contracts or want to handle all resolver types with a single interface.
+
+**Universal Resolver — Mainnet:** `0xce01f8eee7E479C928F8919abD53E553a36CeF67`
+
+The Universal Resolver:
+- Looks up the resolver automatically from the Registry
+- Handles wildcard resolvers that serve entire subtrees
+- Triggers CCIP-Read for resolvers that fetch data from L2 or off-chain
+
+Most libraries (viem, ethers.js, ensjs) use the Universal Resolver under the hood. You benefit from it automatically.
+
+## Wildcard Resolution (ENSIP-10)
+
+Wildcard resolution allows a single resolver contract to respond for any subname under a parent — even subnames that were never explicitly registered.
+
+For example, a resolver on `app.eth` can respond to `alice.app.eth`, `bob.app.eth`, and any other subname, without each one having an individual Registry entry. The resolver receives the full name and decides how to respond — perhaps by looking up a database, reading from L2 storage, or applying custom logic.
+
+From the caller's perspective, wildcard resolution is transparent. The Universal Resolver handles the fallback behavior automatically.
+
+<Tip>
+  Wildcard resolution is the foundation for scalable subname systems. If you're building an app that issues names to users, you can serve all of them from a single resolver contract without writing a Registry entry for each one.
+</Tip>
+
+## Record Types
+
+ENS resolvers can store multiple record types per name. All standard types are defined in ENS Improvement Proposals (ENSIPs).
+
+<Accordion title="Address Records (addr)">
+  Store blockchain addresses for any network. Ethereum uses coin type `60` (SLIP-0044). Other EVM chains use coin types derived from their chain ID (ENSIP-11). Non-EVM chains like Bitcoin (`0`) and Solana (`501`) use their SLIP-0044 coin types.
+
+  ```typescript
+  // Ethereum address (coin type 60)
+  const ethAddr = await client.getEnsAddress({ name: normalize('alice.eth') })
+
+  // Bitcoin address (coin type 0)
+  const btcAddr = await client.getEnsAddress({ name: normalize('alice.eth'), coinType: 0 })
+
+  // Base address (ENSIP-11 coin type for chain ID 8453)
+  import { toCoinType } from 'viem'
+  const baseAddr = await client.getEnsAddress({
+    name: normalize('alice.eth'),
+    coinType: toCoinType(8453),
+  })
+  ```
+</Accordion>
+
+<Accordion title="Text Records (text)">
+  Store arbitrary key/value strings. Common keys include `avatar`, `description`, `url`, `com.twitter`, `com.github`, `email`, and `org.telegram`. You can also set custom keys for application-specific metadata.
+
+  ```typescript
+  const avatar  = await client.getEnsText({ name: normalize('alice.eth'), key: 'avatar' })
+  const twitter = await client.getEnsText({ name: normalize('alice.eth'), key: 'com.twitter' })
+  const email   = await client.getEnsText({ name: normalize('alice.eth'), key: 'email' })
+  ```
+</Accordion>
+
+<Accordion title="Content Hash (contenthash)">
+  Store a pointer to decentralized content: IPFS CIDs, IPNS keys, Swarm hashes, or Onion addresses. Browsers and gateways use this to resolve `.eth` URLs directly to decentralized websites.
+
+  ```typescript
+  const contentHash = await client.getEnsText({ name: normalize('alice.eth'), key: 'contenthash' })
+  // e.g., ipfs://bafybeib...
+  ```
+</Accordion>
+
+<Accordion title="ABI Records (abi)">
+  Store a contract ABI on-chain so that tooling can discover the interface of a contract by resolving its ENS name. Supports full JSON ABIs as well as compressed formats.
+</Accordion>
+
+## Multichain Address Support
+
+ENS names can store addresses for dozens of blockchains in a single resolver. The coin type system (SLIP-0044 for non-EVM chains, ENSIP-11 for EVM chains) provides a standardized mapping.
+
+| Network      | Coin Type  |
+|--------------|------------|
+| Bitcoin      | 0          |
+| Litecoin     | 2          |
+| Ethereum     | 60         |
+| Solana       | 501        |
+| OP Mainnet   | 2147483658 |
+| Polygon      | 2147483785 |
+| Base         | 2147492101 |
+| Arbitrum One | 2147525809 |
+
+<Note>
+  Resolution always starts on Ethereum Mainnet regardless of which chain's address you are looking up. The resolver on L1 may then redirect to L2 storage via CCIP-Read, but the Registry lookup always begins on L1.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Layer 2 & CCIP-Read" href="/concepts/layer2" icon="layer-group">
+    Learn how resolvers fetch records stored on L2 networks or off-chain databases.
+  </Card>
+  <Card title="Contract Deployments" href="/concepts/deployments" icon="file-code">
+    Find the Registry and Universal Resolver addresses on Mainnet and Sepolia.
+  </Card>
+</CardGroup>

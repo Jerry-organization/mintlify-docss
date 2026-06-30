@@ -1,0 +1,110 @@
+---
+title: "DNS Name Integration with ENS via DNSSEC"
+sidebarTitle: "DNS Names"
+description: "Import any DNSSEC-enabled DNS domain into ENS to use your existing .com, .org, or .xyz name as a fully functional ENS name."
+---
+
+ENS is not limited to `.eth` names. Any DNS domain with DNSSEC enabled — `.com`, `.org`, `.xyz`, `.art`, and hundreds of other TLDs — can be imported into ENS and used exactly like a native ENS name. Once claimed, you can set an Ethereum address, text records, content hash, and any other ENS record type on your DNS name.
+
+## Why Use DNS Names in ENS?
+
+DNS name integration lets you bridge your existing online identity into Web3 without abandoning your current domain. If you already own `myproject.com` or `myapp.xyz`, you can use that same name as your ENS identity — no need to register a separate `.eth` name.
+
+Key advantages:
+- Reuse an established domain name with existing brand recognition.
+- Give users a single name that works in both DNS and ENS contexts.
+- Issue ENS subnames under your DNS domain (e.g., `alice.myapp.xyz`).
+
+## Requirements
+
+Before you claim a DNS name in ENS, make sure:
+
+1. **DNSSEC is enabled** on your domain. Check your DNS provider's settings — most major registrars (Cloudflare, Route 53, Namecheap) support DNSSEC. Not all TLDs support DNSSEC; check the [supported TLD list](https://docs.ens.domains/dns/tlds) to confirm yours does.
+2. **You control the DNS zone** for the domain and can add TXT records.
+
+<Note>
+  DNSSEC must be enabled and fully propagated before you attempt to claim your name in ENS. Propagation can take up to 48 hours depending on your DNS provider and TLD registry.
+</Note>
+
+## Claiming Your DNS Name
+
+<Steps>
+  <Step title="Enable DNSSEC on your domain">
+    Log in to your DNS provider and enable DNSSEC for your domain. The exact steps vary by provider, but the setting is typically found in your domain's security or DNS settings panel. After enabling DNSSEC, wait for propagation before proceeding.
+  </Step>
+  <Step title="Add the ENS TXT record">
+    Create a TXT record on the `_ens` subdomain of your domain. Set its value to your Ethereum address in the following format:
+
+    ```
+    Record type:  TXT
+    Name:         _ens.yourdomain.com
+    Value:        a=0xYOURETHADDRESS
+    ```
+
+    For example, if you own `myapp.xyz` and your Ethereum address is `0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045`, the TXT record value would be:
+
+    ```
+    a=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
+    ```
+
+    Save the record and wait for DNS propagation (typically a few minutes to an hour).
+  </Step>
+  <Step title="Claim the name on-chain">
+    Visit the [ENS Manager App](https://app.ens.domains), search for your DNS name, and click **Import DNS Name**. The app walks you through verifying your DNSSEC proof on-chain.
+
+    You can also interact with the DNS Registrar contract directly:
+
+    **DNS Registrar (Mainnet):** `0xB32cB5677a7C971689228EC835800432394992b8`
+
+    Choose between two claiming methods:
+    - **Standard import:** Verifies the DNSSEC proof fully on-chain. Costs more gas but requires no trust in external services.
+    - **Gasless import (CCIP-Read):** Uses CCIP-Read (EIP-3668) to verify the proof off-chain, then submits only a compact result on-chain. Significantly cheaper in gas.
+  </Step>
+  <Step title="Set your records">
+    Once claimed, your DNS name is registered in the ENS Registry under your Ethereum address. You can now set an ETH address, text records, content hash, and any other ENS record — just like you would for a `.eth` name.
+
+    Use the ENS Manager App or any ENS-compatible library to write records.
+  </Step>
+</Steps>
+
+## Gasless DNSSEC (CCIP-Read)
+
+The standard on-chain DNSSEC verification can be gas-intensive because it processes the full DNSSEC proof chain in EVM bytecode. Gasless DNSSEC (introduced in ENS Governance Proposal EP 5.1) uses CCIP-Read to move the heavy proof verification off-chain:
+
+1. Your client calls the DNS Registrar, which reverts with an `OffchainLookup` error pointing to a gateway URL.
+2. The gateway fetches and validates the DNSSEC proof chain off-chain.
+3. Your client calls back the registrar with the compressed result.
+4. The registrar verifies just the final step on-chain — much cheaper.
+
+<Tip>
+  Use gasless DNSSEC whenever your DNS provider supports it. The ENS Manager App automatically selects the gasless path when available.
+</Tip>
+
+## Managing Records After Claiming
+
+Once your DNS name is claimed in ENS, you manage it like any other ENS name:
+
+- **Set a primary name:** Point your Ethereum address's reverse record to your DNS name to use it as your ENS identity across apps.
+- **Set records:** Add an ETH address, avatar, social handles, content hash, and more through the ENS Manager or directly via the Public Resolver contract.
+- **Issue subnames:** Create subnames like `alice.myapp.xyz` and assign them to other addresses or resolvers.
+
+<Warning>
+  If the DNS owner of a domain changes (e.g., you transfer the domain to someone else), the new DNS owner can reclaim the ENS name by submitting a fresh DNSSEC proof. DNS ownership always supersedes prior on-chain claims.
+</Warning>
+
+## Re-claiming After DNS Transfer
+
+Because ENS uses live DNSSEC proofs to verify DNS ownership, the current DNS owner of a domain can always reclaim the ENS name — even if it was previously claimed by someone else. This is intentional: it ties ENS ownership to DNS ownership and prevents squatting.
+
+If you are transferring a domain and want the new owner to control the ENS name, coordinate the DNS transfer and ENS re-claim with them directly.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="ENS Protocol" href="/concepts/protocol" icon="circle-info">
+    Understand the Registry, Resolvers, and Registrars that power ENS name management.
+  </Card>
+  <Card title="Contract Deployments" href="/concepts/deployments" icon="file-code">
+    Find the DNS Registrar contract address and other deployment addresses.
+  </Card>
+</CardGroup>

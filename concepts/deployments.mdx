@@ -1,0 +1,117 @@
+---
+title: "ENS Contract Deployment Addresses"
+sidebarTitle: "Deployments"
+description: "Canonical addresses for every ENS contract on Ethereum Mainnet and Sepolia testnet, with descriptions of each contract's role."
+---
+
+Every ENS resolution starts with an on-chain contract call. This page lists the canonical deployment addresses for the core ENS contracts on Ethereum Mainnet and the Sepolia testnet. Use these addresses when building integrations, verifying contracts, or making direct contract calls.
+
+<Note>
+  Most ENS libraries (viem, ethers.js, ensjs, wagmi) embed these addresses and select the correct one based on the chain you connect to. You only need to reference this page if you are making raw contract calls, writing your own resolution logic, or auditing a dependency.
+</Note>
+
+## Ethereum Mainnet
+
+The source of truth for ENS resolution. All ENS names — regardless of whether their records are stored on L1, L2, or off-chain — are anchored here through the Registry.
+
+| Contract | Address | Role |
+|---|---|---|
+| **Registry** | `0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e` | Root contract mapping every ENS name (as a namehash) to its owner, resolver, and TTL. The single entry point for all resolution. |
+| **ETH Registrar (BaseRegistrar)** | `0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85` | ERC-721 NFT contract representing ownership of `.eth` second-level names. Holding the NFT means you own the name. |
+| **ETH Registrar Controller** | `0x253553366Da8546fC250F225fe3d25d0C782303b` | User-facing registration contract for `.eth` names. Implements the commit-reveal flow and collects registration fees. |
+| **Public Resolver** | `0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63` | General-purpose resolver supporting all standard record types: addresses (multi-chain), text records, content hashes, ABIs, and public keys. |
+| **Universal Resolver** | `0xce01f8eee7E479C928F8919abD53E553a36CeF67` | Wraps the full resolution flow — Registry lookup, wildcard resolution, and CCIP-Read — into a single contract call. Use this in your own contracts. |
+| **Name Wrapper** | `0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401` | Wraps ENS names as ERC-1155 tokens and enables fuse-based permissions for subnames (e.g., making a subname unrevocable or non-transferable). |
+| **Reverse Registrar** | `0xa58E81fe9b61B5c3fE2AFD33CF304c454AbFc7Cb` | Manages the `addr.reverse` namespace. Call `setName` on this contract to set your primary ENS name for an address. |
+| **DNS Registrar** | `0xB32cB5677a7C971689228EC835800432394992b8` | Handles DNSSEC proof verification for importing DNS names (e.g., `myproject.com`) into ENS. |
+
+## Sepolia Testnet
+
+Use Sepolia for development and testing. The Registry address is identical to Mainnet, but the Registrar Controller and Resolver are distinct deployments.
+
+Interact with ENS on Sepolia at [sepolia.app.ens.domains](https://sepolia.app.ens.domains).
+
+| Contract | Address | Role |
+|---|---|---|
+| **Registry** | `0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e` | Same address as Mainnet. The Registry is deployed deterministically. |
+| **ETH Registrar Controller** | `0xFED6a969AaA60E4961FCD3EBF1A2e8913ac65B16` | Testnet registration contract for `.eth` names on Sepolia. |
+| **Public Resolver** | `0x8FADE66B79cC9f707aB26799354482EB93a5B7dD` | Testnet public resolver supporting all standard record types. |
+
+<Warning>
+  Holesky testnet support is being phased out. If you are currently using Holesky for ENS testing, migrate your workflows to Sepolia.
+</Warning>
+
+## Verifying Contracts
+
+All ENS contracts are verified on Etherscan. To inspect a contract's source code, ABI, or recent transactions, navigate to:
+
+```
+https://etherscan.io/address/<CONTRACT_ADDRESS>#code
+```
+
+For Sepolia:
+
+```
+https://sepolia.etherscan.io/address/<CONTRACT_ADDRESS>#code
+```
+
+For example, to verify the Mainnet Registry:
+
+```
+https://etherscan.io/address/0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e#code
+```
+
+## Canonical Deployment Source
+
+The authoritative source for ENS contract deployments (including any future updates) is the [ensdomains/ens-contracts](https://github.com/ensdomains/ens-contracts/tree/staging/deployments) repository on GitHub. Check there for the latest addresses before hardcoding them into production code.
+
+## Contract Roles at a Glance
+
+<Accordion title="Registry — the root of ENS">
+  The Registry is the single most important contract in ENS. Every name resolution starts here with a call to `resolver(node)` to find which resolver contract manages that name. The Registry also stores the owner and TTL of each name. There is only one Registry per network, and its address is the same on Mainnet and Sepolia.
+</Accordion>
+
+<Accordion title="ETH Registrar (BaseRegistrar) — .eth name ownership">
+  The BaseRegistrar is an ERC-721 NFT contract. Each token ID corresponds to the `keccak256` hash of a `.eth` second-level label (e.g., `keccak256('alice')` for `alice.eth`). Owning the token means owning the name. You can transfer the name by transferring the NFT.
+</Accordion>
+
+<Accordion title="ETH Registrar Controller — .eth registration interface">
+  This is the contract end users interact with when registering a `.eth` name. It implements a commit-reveal scheme: you first submit a commitment hash, wait at least one minute, then reveal the name and pay the fee. This prevents front-running. Registration fees go to the ENS DAO treasury.
+</Accordion>
+
+<Accordion title="Public Resolver — standard record storage">
+  The Public Resolver is the default resolver for new ENS names. It implements all ENS record standards: `addr` (multi-chain addresses), `text` (key/value strings), `contenthash` (IPFS, IPNS, Swarm), `abi`, and `pubkey`. Any name owner can use it — you do not need to deploy your own resolver unless you need custom logic.
+</Accordion>
+
+<Accordion title="Universal Resolver — one call does it all">
+  The Universal Resolver removes the need for your own contracts to implement multi-step resolution logic. Pass it a name and a record type, and it handles Registry lookup, wildcard fallback (ENSIP-10), and CCIP-Read (EIP-3668) automatically. Prefer this over calling the Registry and resolver separately.
+</Accordion>
+
+<Accordion title="Name Wrapper — ERC-1155 names with permissions">
+  The Name Wrapper wraps ENS names as ERC-1155 tokens and adds a permission system called "fuses." Fuses let you lock capabilities on a name or subname — for example, preventing the owner from unwrapping the name, revoking subnames, or changing the resolver. This is essential for building trustless subname systems where subname holders need guarantees.
+</Accordion>
+
+<Accordion title="Reverse Registrar — setting your primary name">
+  Call `setName(name)` on the Reverse Registrar to set your primary ENS name — the name that apps display when they reverse-resolve your address. This writes a record to your personal `<address>.addr.reverse` name in the Registry.
+</Accordion>
+
+<Accordion title="DNS Registrar — importing DNS names">
+  The DNS Registrar verifies DNSSEC proofs submitted by users who want to claim a DNS name (e.g., `myproject.com`) in ENS. It checks that the DNS zone contains a `_ens` TXT record pointing to the claimant's Ethereum address, then grants them control of the ENS name.
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="ENS Protocol" href="/concepts/protocol" icon="circle-info">
+    Understand how the Registry, Resolvers, and Registrars fit together.
+  </Card>
+  <Card title="Name Resolution" href="/concepts/resolution" icon="magnifying-glass">
+    Learn the step-by-step resolution flow that uses these contracts.
+  </Card>
+  <Card title="Layer 2 & CCIP-Read" href="/concepts/layer2" icon="layer-group">
+    Explore how the Universal Resolver handles L2 and off-chain data.
+  </Card>
+  <Card title="DNS Names" href="/concepts/dns-names" icon="globe">
+    Learn how the DNS Registrar lets you import your DNS domain into ENS.
+  </Card>
+</CardGroup>

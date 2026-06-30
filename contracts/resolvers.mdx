@@ -1,0 +1,315 @@
+---
+title: "ENS Resolvers: Public, Universal, and CCIP-Read"
+sidebarTitle: "Resolvers"
+description: "Store and serve ENS records with the Public Resolver, resolve any name with the Universal Resolver, and build offchain resolvers with CCIP-Read."
+---
+
+A resolver is the contract responsible for answering queries about a name — returning an ETH address, a text record, a content hash, or any other data. Every ENS name points to a resolver in the Registry, and callers query that resolver directly. ENS provides three types of resolvers to cover most use cases.
+
+<CardGroup cols={3}>
+  <Card title="Public Resolver" icon="database">
+    The default resolver for `.eth` names. Stores all records on-chain on L1 Ethereum.
+  </Card>
+  <Card title="Universal Resolver" icon="magnifying-glass">
+    A single entry-point contract that handles wildcards, CCIP-Read, and multicall across any resolver.
+  </Card>
+  <Card title="CCIP-Read Resolvers" icon="cloud">
+    Custom resolvers that defer record storage to L2 networks or offchain APIs via EIP-3668.
+  </Card>
+</CardGroup>
+
+---
+
+## Public Resolver
+
+The Public Resolver (`0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63`) is the default resolver for names registered through the ENS Manager App. It stores all records on Ethereum Mainnet and allows the name owner to update them.
+
+### Supported Record Types
+
+| Record | EIP | Read function | Write function |
+|---|---|---|---|
+| ETH address | EIP-137 | `addr(bytes32 node)` | `setAddr(bytes32 node, address addr)` |
+| Multi-chain address | EIP-2304 | `addr(bytes32 node, uint256 coinType)` | `setAddr(bytes32 node, uint256 coinType, bytes addr)` |
+| Text record | EIP-634 | `text(bytes32 node, string key)` | `setText(bytes32 node, string key, string value)` |
+| Content hash | EIP-1577 | `contenthash(bytes32 node)` | `setContenthash(bytes32 node, bytes hash)` |
+| ABI | EIP-205 | `ABI(bytes32 node, uint256 contentTypes)` | `setABI(bytes32 node, uint256 contentType, bytes data)` |
+| Public key | EIP-619 | `pubkey(bytes32 node)` | `setPubkey(bytes32 node, bytes32 x, bytes32 y)` |
+| Reverse name | EIP-181 | `name(bytes32 node)` | `setName(bytes32 node, string name)` |
+
+### Reading records
+
+```typescript
+import { createPublicClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+import { namehash } from 'viem/ens'
+
+const client = createPublicClient({ chain: mainnet, transport: http() })
+const PUBLIC_RESOLVER = '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63'
+
+const node = namehash('alice.eth')
+
+// Read ETH address
+const ethAddress = await client.readContract({
+  address: PUBLIC_RESOLVER,
+  abi: resolverAbi,
+  functionName: 'addr',
+  args: [node],
+})
+
+// Read a text record
+const twitterHandle = await client.readContract({
+  address: PUBLIC_RESOLVER,
+  abi: resolverAbi,
+  functionName: 'text',
+  args: [node, 'com.twitter'],
+})
+
+// Read a Bitcoin address (coinType 0 = BTC)
+const btcAddress = await client.readContract({
+  address: PUBLIC_RESOLVER,
+  abi: resolverAbi,
+  functionName: 'addr',
+  args: [node, 0n],
+})
+```
+
+### Updating records
+
+You must be the name's owner (or an approved operator) to write records:
+
+```typescript
+await walletClient.writeContract({
+  address: PUBLIC_RESOLVER,
+  abi: resolverAbi,
+  functionName: 'setText',
+  args: [node, 'com.twitter', '@alice'],
+})
+```
+
+### Batch updates with multicall
+
+Use `multicall` to update multiple records in a single transaction:
+
+```solidity
+// Batch any number of resolver calls in one transaction
+PublicResolver.multicall(bytes[] calldata data) returns (bytes[] memory results)
+```
+
+```typescript
+import { encodeFunctionData } from 'viem'
+
+const calls = [
+  encodeFunctionData({ abi: resolverAbi, functionName: 'setAddr', args: [node, ownerAddress] }),
+  encodeFunctionData({ abi: resolverAbi, functionName: 'setText', args: [node, 'url', 'https://alice.xyz'] }),
+  encodeFunctionData({ abi: resolverAbi, functionName: 'setText', args: [node, 'description', 'Builder on Ethereum'] }),
+]
+
+await walletClient.writeContract({
+  address: PUBLIC_RESOLVER,
+  abi: resolverAbi,
+  functionName: 'multicall',
+  args: [calls],
+})
+```
+
+### Default EVM Address (ENSIP-19)
+
+The Public Resolver supports a "default EVM address" via `coinType = 0`. If you set this, all EVM-compatible chains will resolve to it unless you override with a chain-specific address.
+
+```solidity
+// Set a default address for all EVM chains
+setAddr(bytes32 node, uint256 coinType, bytes addr)
+// coinType 0 = default EVM address
+```
+
+---
+
+## Universal Resolver
+
+The Universal Resolver (`0xce01f8eee7E479C928F8919abD53E553a36CeF67`) is the recommended entry point for library developers. It handles wildcard resolution, CCIP-Read callbacks, and multicall in a single contract call — no matter which resolver a name uses.
+
+<Note>
+  Application developers should use a library like ENS.js or viem that already wraps the Universal Resolver. The guide below is for library and tooling developers building lower-level integrations.
+</Note>
+
+### Forward resolution
+
+```solidity
+// Resolve one or more records for a name
+// name: DNS-encoded, normalized name
+// data: ABI-encoded resolver call, or multicall-encoded batch
+UniversalResolver.resolve(bytes name, bytes data)
+  view returns (bytes result, address resolver)
+```
+
+<Steps>
+  <Step title="Normalize and DNS-encode the name">
+    ```typescript
+    import { normalize } from 'viem/ens'
+    import { toHex } from 'viem'
+    import { packetToBytes } from 'viem/ens'
+
+    const name = normalize('Alice.ETH') // => 'alice.eth'
+    const dnsEncodedName = toHex(packetToBytes(name))
+    // => '0x05616c6963650365746800'
+    ```
+  </Step>
+  <Step title="Build the resolver calldata">
+    ```typescript
+    import { namehash, normalize } from 'viem/ens'
+    import { encodeFunctionData, parseAbi } from 'viem'
+
+    const resolverAbi = parseAbi([
+      'function addr(bytes32 node) view returns (address)',
+      'function text(bytes32 node, string key) view returns (string)',
+      'function multicall(bytes[] data) returns (bytes[] results)',
+    ])
+
+    const node = namehash('alice.eth')
+
+    const data = encodeFunctionData({
+      abi: resolverAbi,
+      functionName: 'multicall',
+      args: [[
+        encodeFunctionData({ abi: resolverAbi, functionName: 'addr', args: [node] }),
+        encodeFunctionData({ abi: resolverAbi, functionName: 'text', args: [node, 'description'] }),
+      ]],
+    })
+    ```
+  </Step>
+  <Step title="Call the Universal Resolver">
+    ```typescript
+    import { createPublicClient, decodeFunctionResult, http } from 'viem'
+    import { mainnet } from 'viem/chains'
+
+    const client = createPublicClient({ chain: mainnet, transport: http() })
+
+    const [resultBytes, resolverAddress] = await client.readContract({
+      address: '0xce01f8eee7E479C928F8919abD53E553a36CeF67',
+      abi: universalResolverAbi,
+      functionName: 'resolve',
+      args: [dnsEncodedName, data],
+    })
+    ```
+  </Step>
+</Steps>
+
+### Reverse resolution
+
+```solidity
+// Resolve an address to a primary ENS name
+// lookupAddress: the Ethereum address to reverse-resolve
+// coinType: the chain (60 = Ethereum Mainnet)
+UniversalResolver.reverse(bytes lookupAddress, uint256 coinType)
+  view returns (string primary, address resolver, address reverseResolver)
+```
+
+```typescript
+const [primaryName] = await client.readContract({
+  address: '0xce01f8eee7E479C928F8919abD53E553a36CeF67',
+  abi: universalResolverAbi,
+  functionName: 'reverse',
+  args: ['0xb8c2C29ee19D8307cb7255e1Cd9CbDE883A267d5', 60n],
+})
+// primaryName => 'nick.eth'
+```
+
+The Universal Resolver automatically verifies that the name forward-resolves back to the address, so your code does not need an additional round-trip check.
+
+### Finding a resolver
+
+```solidity
+// Find the resolver responsible for a name (respects wildcards)
+UniversalResolver.findResolver(bytes name)
+  view returns (address resolver, bytes32 node)
+```
+
+### Error types
+
+```solidity
+error ResolverNotFound(bytes name)
+error ResolverNotContract(bytes name, address resolver)
+error UnsupportedResolverProfile(bytes4 selector)
+error ResolverError(bytes errorData)
+error ReverseAddressMismatch(string primary, bytes primaryAddress)
+error HttpError(uint16 status, string message)
+```
+
+---
+
+## CCIP-Read (Offchain/L2) Resolvers
+
+CCIP-Read resolvers implement [EIP-3668](https://eips.ethereum.org/EIPS/eip-3668) to store name data offchain — on an L2 network, in a database, or anywhere accessible via HTTP. From the application developer's perspective, resolution is identical to on-chain names.
+
+### How it works
+
+When a resolver cannot answer a query from on-chain storage, it reverts with:
+
+```solidity
+error OffchainLookup(
+  address sender,        // the reverting contract
+  string[] urls,         // gateway URLs to call
+  bytes callData,        // data to send to the gateway
+  bytes4 callbackFunction, // function to call with the result
+  bytes extraData        // extra data for the callback
+)
+```
+
+An EIP-3668-aware client (viem, wagmi, ethers) intercepts this revert, calls the gateway URL, and invokes the callback function with the response. Your application code does not need to handle this — it's transparent.
+
+### Common use case: L2 subnames
+
+Many protocols store subnames on L2. For example, `jesse.base.eth` lives on Base while `base.eth` lives on Ethereum Mainnet. The L1 resolver for `base.eth` reverts with `OffchainLookup`, directing the client to a Coinbase gateway that fetches the record from Base.
+
+```
+User resolves jesse.base.eth
+  → L1: Registry returns resolver for base.eth
+  → L1: Resolver reverts with OffchainLookup (gateway: api.coinbase.com)
+  → Client: Fetches data from gateway
+  → L1: Callback validates gateway response
+  → Client: Returns resolved address
+```
+
+### Writing a CCIP-Read gateway
+
+Your gateway must implement a `GET` or `POST` endpoint:
+
+<Tabs>
+  <Tab title="GET endpoint">
+    ```
+    GET https://your-gateway.com/{sender}/{data}.json
+    ```
+    Use this format when your gateway URL includes `{data}` as a path parameter.
+  </Tab>
+  <Tab title="POST endpoint">
+    ```
+    POST https://your-gateway.com/gateway
+    Body: { "sender": "0x...", "data": "0x..." }
+    ```
+    Use this format when your gateway URL does not include `{data}`.
+  </Tab>
+</Tabs>
+
+<ParamField body="sender" type="address" required>
+  The address of the contract that reverted with `OffchainLookup`.
+</ParamField>
+
+<ParamField body="data" type="bytes" required>
+  The `callData` field from the `OffchainLookup` error, 0x-prefixed.
+</ParamField>
+
+### Trust model
+
+| Approach | Security | Use case |
+|---|---|---|
+| Trusted gateway | Gateway operator can return any data | Internal tooling, development |
+| Signed offchain data | Compromised gateway can't forge data, but can go offline | Most production offchain use cases |
+| L2 state proofs | Fully trustless — verifies L2 state root on L1 | High-value names, decentralized protocols |
+
+<Tip>
+  For trustless L2 resolution, use [Unruggable Gateways](https://gateway-docs.unruggable.com/) which verify L2 state proofs on L1 automatically.
+</Tip>
+
+### Test your CCIP-Read resolver
+
+Search your name in the [ENS Manager App](https://app.ens.domains). Configure common records like an ETH address and `avatar` text record — the manager has no way to discover arbitrary keys, so make sure you set fields it knows to display.

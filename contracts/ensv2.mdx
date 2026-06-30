@@ -1,0 +1,141 @@
+---
+title: "ENSv2: Next-Generation ENS Protocol Overview"
+sidebarTitle: "ENSv2"
+description: "ENSv2 brings native L2 support, hierarchical registries, and role-based permissions to ENS. Learn what's changing and how migration will work."
+---
+
+ENSv2 is the next generation of the Ethereum Name Service protocol. It rebuilds the core architecture from the ground up to support native Layer 2 deployment, eliminate the single-contract bottleneck of the ENSv1 registry, and replace the Name Wrapper fuse system with a cleaner, built-in permissions model. ENSv1 continues to operate normally while ENSv2 is developed in parallel by ENS Labs.
+
+<Warning>
+  ENSv2 is under **active development**. All architecture details, timelines, and migration processes described here are subject to change as the design is finalised and audits are completed. Follow [discuss.ens.domains](https://discuss.ens.domains) and the [ensdomains/ens-contracts](https://github.com/ensdomains/ens-contracts) repository for the latest updates.
+</Warning>
+
+## What's New in ENSv2
+
+<CardGroup cols={2}>
+  <Card title="Hierarchical Registries" icon="sitemap">
+    Each name owns its own sub-registry contract instead of sharing a single global registry. This lets names live natively on any chain and gives name owners direct control over the ownership and transfer rules for their subnames.
+  </Card>
+  <Card title="Native L2 Support" icon="layer-group">
+    Names can be registered and managed directly on L2 networks such as Arbitrum, Optimism, and Base. This dramatically reduces gas costs and removes the need for CCIP-Read workarounds for most common operations.
+  </Card>
+  <Card title="Role-Based Permissions" icon="key">
+    The Name Wrapper fuse system is replaced by a native role-based permissions model inspired by OpenZeppelin's Roles library. Roles are granular, composable, and enforceable at the registry level — no separate wrapper contract required.
+  </Card>
+  <Card title="Contract Factories" icon="cubes">
+    Every name gets its own dedicated resolver contract, and every name with subnames gets its own registry contract. This simplifies contract logic, enables record aliasing across multiple names, and removes shared-state risks.
+  </Card>
+  <Card title="ERC-1155 for All Names" icon="hexagon-image">
+    All ENSv2 names are represented as ERC-1155 tokens from the start. There is no separate ERC-721 representation for `.eth` 2LDs.
+  </Card>
+  <Card title="No Grace Period" icon="calendar-xmark">
+    ENSv2 removes the 90-day grace period. Names expire at their stated expiry timestamp and immediately enter the temporary premium auction period. The previous owner does not pay the premium fee during that window.
+  </Card>
+</CardGroup>
+
+## Architecture: ENSv1 vs ENSv2
+
+The most fundamental change in ENSv2 is moving from a single flat registry to a **tree of registries**, where each name can own its own registry for subnames.
+
+### ENSv1 — Single Flat Registry
+
+In ENSv1, one global registry stores a mapping from every name's namehash to its owner and resolver. Hierarchical ownership is enforced by convention (via namehash) rather than by structure. A change in a parent name does not automatically affect subnames.
+
+```
+Global Registry
+├── <root>   → owner: 0x0123...
+├── eth      → owner: ETH Registrar
+├── alice.eth → owner: 0x5678..., resolver: 0x6789...
+└── sub.alice.eth → owner: 0x7890..., resolver: 0x890A...
+```
+
+### ENSv2 — Hierarchical Registries
+
+In ENSv2, each name that has subnames owns its own registry contract. Each name can also have its own dedicated resolver contract (created by a factory). Resolution still follows the longest-suffix rule — the resolver for the deepest matching name in the hierarchy is used.
+
+```
+Root Registry
+└── eth → ETH Registry
+    └── alice.eth → Alice's Registry + Alice's Resolver
+        └── sub.alice.eth → Sub's Resolver
+```
+
+This tree structure has powerful consequences:
+
+- **Subtree operations** — Transferring `alice.eth` to a new owner can atomically replace the entire subregistry, removing all previous subnames in a single operation.
+- **Namespace aliasing** — A single registry can serve multiple names. If `wallet.eth` and `pay.eth` both point to the same registry, all their subnames resolve identically.
+- **No shared state** — Because each name's registry is its own contract, a bug or upgrade in one registry cannot affect another name's records.
+
+## ENSv1 vs ENSv2 Comparison
+
+| Feature | ENSv1 | ENSv2 |
+|---|---|---|
+| **Registry** | Single global contract | Tree of per-name registry contracts |
+| **Permissions** | Name Wrapper fuse system (separate contract) | Native role-based permissions (built into registries) |
+| **Chain support** | Primarily L1 Ethereum (CCIP-Read for L2) | Native multi-chain / L2 deployment |
+| **Grace period** | 90 days after expiry | None — names expire immediately |
+| **Token standard** | ERC-721 (`.eth` 2LDs) + ERC-1155 (wrapped) | ERC-1155 for all names |
+| **Resolver** | Shared public resolver (or custom) | Per-name resolver factory |
+| **Record aliasing** | Not supported | Supported via shared subregistries |
+
+## Role-Based Permissions
+
+ENSv2 replaces Name Wrapper fuses with a role-based model. Each registry defines a set of roles, and each role has a corresponding admin role that controls granting and revoking it. Roles can be granted per-name or across the entire registry contract.
+
+Typical roles in a standard ENSv2 registry include:
+
+- **Owner** — full control over the name; can grant or revoke all other roles.
+- **Operator** — can manage records (set resolver, set subregistry) for names it has been granted the role on.
+- **Registrar** — can create new subnames within the registry (contract-wide role).
+
+To replicate the Name Wrapper's "emancipate + lock" pattern in ENSv2:
+
+<Steps>
+  <Step title="Grant registrar role to a registrar contract">
+    Allow a separate contract to create subnames on behalf of the registry owner.
+  </Step>
+  <Step title="Revoke the owner's set-resolver and set-subregistry roles">
+    Remove the owner's ability to modify the registry's resolver and subregistry pointers.
+  </Step>
+  <Step title="Revoke admin roles">
+    Revoke the admin roles for those capabilities so they cannot be re-granted.
+  </Step>
+  <Step title="Revoke the subname token on the parent registry">
+    Remove the owner's ability to replace the subregistry reference in the parent registry (equivalent to burning `PARENT_CANNOT_CONTROL`).
+  </Step>
+</Steps>
+
+<Note>
+  When a subname is transferred to a new owner, roles granted to the previous owner are automatically transferred. Roles granted to **other accounts** (such as operators or registrars) are not affected by the transfer. Always verify the full role state of a name before purchasing it on a secondary market.
+</Note>
+
+## What Stays the Same
+
+ENSv2 is a protocol upgrade, not a replacement ecosystem. The following remain unchanged:
+
+- **Resolver interface** — All existing ENSv1 resolvers continue to work in ENSv2. The interface for resolving records (`addr`, `text`, `contenthash`, etc.) is unchanged.
+- **True ownership** — ENSv2 preserves ENS's trust-minimisation principles. You own your name without relying on a centralised third party.
+- **Multi-chain resolution** — ENS continues to support resolution across all EVM-compatible chains.
+
+## Migration from ENSv1
+
+ENSv1 names will be migrated to ENSv2. ENS Labs is designing the migration to be as seamless as possible for name owners.
+
+<AccordionGroup>
+  <Accordion title="What will happen to my ENSv1 name?">
+    Your ENSv1 name and all its records will be migrated to ENSv2. The migration process is being designed so that name owners do not need to take any action for the basic migration. Specific details and tooling will be announced by ENS Labs before the migration begins.
+  </Accordion>
+  <Accordion title="Will the Name Wrapper still exist?">
+    The Name Wrapper is an ENSv1 contract. In ENSv2, its functionality is built directly into the registry layer as native role-based permissions. Names migrated from ENSv1 will have their fuse states mapped to equivalent ENSv2 roles.
+  </Accordion>
+  <Accordion title="Will my resolver records be preserved?">
+    Yes. Existing resolver records set on ENSv1 resolvers are preserved. ENSv2 also introduces per-name resolver contracts via a factory, which you can optionally migrate to for additional features such as record aliasing.
+  </Accordion>
+  <Accordion title="Where can I follow migration progress?">
+    Monitor the [ENS governance forum](https://discuss.ens.domains) for official announcements from ENS Labs, and watch the [ensdomains/ens-contracts](https://github.com/ensdomains/ens-contracts) GitHub repository for contract development updates.
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+  If you are building a new integration today, design your resolver and registration flows around the standard ENS interfaces (`addr`, `text`, `contenthash`). These interfaces are unchanged in ENSv2, so your integration will continue to work after the migration.
+</Tip>

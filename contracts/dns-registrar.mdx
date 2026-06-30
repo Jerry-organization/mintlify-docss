@@ -1,0 +1,182 @@
+---
+title: "DNS Registrar: Import DNS Names into ENS"
+sidebarTitle: "DNS Registrar"
+description: "Claim any DNSSEC-enabled DNS name in ENS by submitting on-chain proofs or using the gasless CCIP-Read path. Includes setup and code examples."
+---
+
+The DNS Registrar lets you bring any DNSSEC-enabled domain name — such as `example.com` — into ENS. Once imported, your DNS name works exactly like a `.eth` name: it can have an ETH address, text records, content hash, and subnames. There is **no ENS protocol fee** to import a DNS name, though you will pay gas to submit the proof on-chain.
+
+<Note>
+  Not all TLDs support DNSSEC. Check the [supported TLD list](https://app.ens.domains) before attempting an import. The DNS Registrar is deployed at `0xB32cB5677a7C971689228EC835800432394992b8` on Ethereum Mainnet.
+</Note>
+
+## How It Works
+
+ENS uses **DNSSEC** (DNS Security Extensions) to verify that you control a domain. DNSSEC creates a cryptographic chain of trust from ICANN's root key down to your domain's key. The on-chain [DNSSECOracle](https://github.com/ensdomains/ens-contracts/tree/master/contracts/dnssec-oracle) verifies these signatures.
+
+There are two ways to import a DNS name:
+
+<CardGroup cols={2}>
+  <Card title="On-Chain (Classic)" icon="link">
+    Submit a DNSSEC proof transaction directly to the DNSRegistrar. High gas cost (up to several million), but the name is anchored on-chain immediately.
+  </Card>
+  <Card title="Gasless (CCIP-Read)" icon="bolt">
+    Configure a TXT record and the DNSSEC proof is verified at query time via CCIP-Read. Free to set up — no gas cost at all.
+  </Card>
+</CardGroup>
+
+## Option 1: On-Chain Import
+
+### Step 1 — Enable DNSSEC on your domain
+
+Log in to your DNS registrar (GoDaddy, Cloudflare, Namecheap, etc.) and enable DNSSEC for your domain. The process varies by registrar, but it is usually a single toggle in your domain settings.
+
+### Step 2 — Add the ENS TXT record
+
+Add a TXT record to the `_ens` subdomain of your domain pointing to your Ethereum address:
+
+```
+Host:  _ens.yourdomain.com
+Type:  TXT
+Value: a=0xYOUR_ETH_ADDRESS
+```
+
+For example, to link `example.com` to address `0x225f137127d9067788314bc7fcc1f36746a3c3B5`:
+
+```
+TXT _ens.example.com  a=0x225f137127d9067788314bc7fcc1f36746a3c3B5
+```
+
+### Step 3 — Fetch the DNSSEC proof
+
+Use the ENS.js library to retrieve the signed proof data from DNS:
+
+```typescript
+import { addEnsContracts } from '@ensdomains/ensjs'
+import { getDnsImportData } from '@ensdomains/ensjs/dns'
+import { createPublicClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+
+const client = createPublicClient({
+  chain: addEnsContracts(mainnet),
+  transport: http(),
+})
+
+const dnsImportData = await getDnsImportData(client, {
+  name: 'example.com',
+})
+```
+
+### Step 4 — Submit the proof on-chain
+
+```typescript
+import { addEnsContracts } from '@ensdomains/ensjs'
+import { getDnsImportData, importDnsName } from '@ensdomains/ensjs/dns'
+import { createPublicClient, createWalletClient, custom, http } from 'viem'
+import { mainnet } from 'viem/chains'
+
+const mainnetWithEns = addEnsContracts(mainnet)
+
+const client = createPublicClient({
+  chain: mainnetWithEns,
+  transport: http(),
+})
+
+const wallet = createWalletClient({
+  chain: mainnetWithEns,
+  transport: custom(window.ethereum),
+})
+
+const dnsImportData = await getDnsImportData(client, {
+  name: 'example.com',
+})
+
+await importDnsName(wallet, {
+  name: 'example.com',
+  dnsImportData,
+})
+```
+
+### Raw contract functions
+
+If you need to call the contract directly, use these functions:
+
+```solidity
+// Verify the DNSSEC proof and claim the name
+DNSRegistrar.proveAndClaim(
+  bytes name,               // DNS-encoded name
+  DNSSEC.RRSetWithSignature[] input,  // DNSSEC proof data
+  bytes proof               // Final proof element
+)
+
+// Claim and immediately set a resolver and ETH address
+DNSRegistrar.proveAndClaimWithResolver(
+  bytes name,
+  DNSSEC.RRSetWithSignature[] input,
+  bytes proof,
+  address resolver,         // Resolver to assign
+  address addr              // ETH address to set on the resolver
+)
+```
+
+## Option 2: Gasless Import (CCIP-Read)
+
+The gasless path uses [wildcard resolution (ENSIP-10)](/contracts/resolvers) at the TLD level. When someone resolves your DNS name in ENS, the DNSSEC proof is fetched offchain via CCIP-Read and verified on-chain by the DNSSECOracle — all without you paying any gas.
+
+### Setup
+
+Add a single TXT record at the root of your domain (`@`):
+
+```
+Host:  @  (root of your domain)
+Type:  TXT
+Value: ENS1 <resolver-address>
+```
+
+To also specify your ETH address in the same record, use the Extended DNS Resolver:
+
+```
+TXT @ ENS1 0x238A8F792dFA6033814B18618aD4100654aeef01 0xYOUR_ETH_ADDRESS
+```
+
+Replace `0x238A8F792dFA6033814B18618aD4100654aeef01` with the deployed ExtendedDNSResolver address and `0xYOUR_ETH_ADDRESS` with your Ethereum address.
+
+<Tip>
+  The gasless path is ideal for most users. You get ENS resolution for free — no transaction required. Use the on-chain path only if you need the name anchored in the registry for subname management or other smart contract interactions.
+</Tip>
+
+## TLD Ownership
+
+You can check whether a TLD is already active in ENS by querying the registry:
+
+```typescript
+import { namehash } from 'viem/ens'
+
+const tldOwner = await client.readContract({
+  address: '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e',
+  abi: [{ name: 'owner', type: 'function', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'address' }] }],
+  functionName: 'owner',
+  args: [namehash('com')],
+})
+// Returns the DNSRegistrar address if at least one .com name has been imported
+// Returns 0x0 if no names have been imported yet
+```
+
+If the owner is `0x0`, the TLD may need one user to perform an on-chain import first to activate it.
+
+## Other Contract Functions
+
+```solidity
+// Returns the DNSSEC oracle address used for verification
+DNSRegistrar.oracle() view returns (address)
+
+// Returns the supported TLD suffixes
+DNSRegistrar.suffixes() view returns (bytes)
+```
+
+## Helper Libraries
+
+| Library | Purpose |
+|---|---|
+| [`@ensdomains/ensjs`](https://github.com/ensdomains/ensjs) | High-level ENS operations including `getDnsImportData` and `importDnsName` |
+| [`dnsprovejs`](https://github.com/ensdomains/dnsprovejs) | Low-level DNSSEC proof fetching and validation |

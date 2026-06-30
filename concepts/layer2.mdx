@@ -1,0 +1,144 @@
+---
+title: "Layer 2 and CCIP-Read in ENS Resolution"
+sidebarTitle: "Layer 2"
+description: "Learn how CCIP-Read (EIP-3668) lets ENS resolve records stored on Layer 2 networks or off-chain databases, reducing costs and enabling scalability."
+---
+
+ENS resolution always starts on Ethereum Mainnet — the Registry and the initial resolver lookup happen on L1. But the records a resolver returns can come from anywhere: an Arbitrum contract, a Base storage proof, an off-chain database, or any other data source. CCIP-Read is the standard that makes this possible, and it is foundational to how ENS scales beyond L1.
+
+## Why L2 Resolution Matters
+
+Storing ENS records on Ethereum Mainnet is secure but expensive. Every record update costs L1 gas. For applications that need to issue names to thousands or millions of users — or update records frequently — L1 storage becomes a bottleneck.
+
+By pointing an ENS resolver to data stored on an L2 network:
+
+- **Write costs drop dramatically.** L2 transactions cost a fraction of L1.
+- **Records update faster.** L2 block times are shorter.
+- **Scale increases.** An L2 can hold many more records than L1 cost-effectively.
+- **Trust remains.** L2 storage proofs verified on L1 mean data authenticity is cryptographically guaranteed.
+
+## CCIP-Read (EIP-3668)
+
+CCIP-Read (Cross-Chain Interoperability Protocol — Read) is an Ethereum standard that lets smart contracts signal to clients that they should fetch data from an external URL, then pass that data back in a follow-up on-chain call.
+
+<Steps>
+  <Step title="Client calls the resolver">
+    Your application calls a resolver function (e.g., `addr(node)`) on-chain, just as it would for a standard L1 resolver.
+  </Step>
+  <Step title="Resolver reverts with OffchainLookup">
+    Instead of returning a value, the resolver reverts with a special `OffchainLookup` error. This error contains:
+    - One or more **gateway URLs** where the data can be fetched
+    - A **calldata** payload the gateway needs to produce the response
+    - A **callback function selector** for the follow-up call
+
+    ```solidity
+    error OffchainLookup(
+        address sender,
+        string[] urls,
+        bytes callData,
+        bytes4 callbackFunction,
+        bytes extraData
+    );
+    ```
+  </Step>
+  <Step title="Client fetches data from the gateway">
+    Your client catches the `OffchainLookup` revert, reads the gateway URLs, and makes an HTTP request to the gateway. The gateway returns a signed or provable response — for example, an L2 storage proof or a signed off-chain record.
+  </Step>
+  <Step title="Client calls back the resolver with the response">
+    Your client submits a follow-up transaction (or `eth_call`) to the resolver's callback function, passing the gateway response. The resolver verifies the response on-chain and returns the final record value.
+  </Step>
+</Steps>
+
+<Note>
+  CCIP-Read is fully transparent to your application if you use a library like viem, ethers.js, or ensjs. These libraries handle the revert, the gateway fetch, and the callback automatically. You see a single `await` that returns the resolved value.
+</Note>
+
+## How Offchain Resolvers Work for Developers
+
+From your perspective as a developer calling ENS resolution, CCIP-Read is invisible. You call `getEnsAddress` (or equivalent) and get back an address, regardless of whether it came from L1 storage, an L2 proof, or an off-chain database.
+
+```typescript
+import { createPublicClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+import { normalize } from 'viem/ens'
+
+const client = createPublicClient({ chain: mainnet, transport: http() })
+
+// This works identically whether the resolver is L1, L2, or offchain
+const address = await client.getEnsAddress({ name: normalize('greg.linea.eth') })
+```
+
+If you are building a resolver that reads from L2, you need to implement the `OffchainLookup` revert in your resolver contract and deploy a gateway service. The [Unruggable Gateway](https://gateway-docs.unruggable.com/) provides a production-ready framework for building trust-minimized L2 gateways with storage proofs.
+
+## L2 Resolution in the Wild
+
+Several production systems already use CCIP-Read to resolve ENS names from L2:
+
+<Accordion title="linea.eth — Linea">
+  Linea was the first L2 team to ship a trust-minimized ENS subname system. Names are stored on Linea, verified with storage proofs on L1, and resolve as ENS subnames such as `greg.linea.eth`. Try it at [names.linea.build](https://names.linea.build/).
+</Accordion>
+
+<Accordion title="clv.eth — ZKsync Era">
+  Clave accounts come with usernames stored on-chain in ZKsync Era, verified with storage proofs on L1, and issued as ENS subnames such as `ulas.clv.eth`.
+</Accordion>
+
+<Accordion title="cb.id — Coinbase Wallet (off-chain)">
+  Coinbase Wallet issues free ENS subnames (e.g., `jesse.cb.id`) stored off-chain on Coinbase servers. The resolver uses CCIP-Read to fetch and verify records from Coinbase's gateway.
+</Accordion>
+
+<Accordion title="uni.eth — Uniswap Wallet (off-chain)">
+  Uniswap Wallet issues ENS subnames (e.g., `chase.uni.eth`) to its users, resolved via an off-chain gateway backed by Uniswap's infrastructure.
+</Accordion>
+
+## Supported L2 Networks
+
+The following networks are commonly used for ENS L2 resolution today:
+
+| Network   | Type              | Notes                              |
+|-----------|-------------------|------------------------------------|
+| Arbitrum  | Optimistic rollup | Active community deployments       |
+| Base      | Optimistic rollup | Coinbase-backed, high activity     |
+| Optimism  | Optimistic rollup | OP Stack ecosystem                 |
+| Linea     | ZK rollup         | First trust-minimized ENS subnames |
+| Scroll    | ZK rollup         | EVM-equivalent ZK rollup           |
+
+Any EVM-compatible L2 can be used with CCIP-Read as long as you build or deploy a compatible gateway.
+
+## L2 Reverse Resolution
+
+Reverse resolution (address → primary name) on L2 is addressed through **L2 reverse namespaces**. Each L2 chain has its own reverse namespace keyed by chain ID:
+
+```
+<address>.{chainId}.reverse
+```
+
+For example, the reverse namespace for Arbitrum (chain ID 42161) is:
+
+```
+0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045.42161.reverse
+```
+
+<Warning>
+  L2 primary name support is under active development. The specification and tooling are evolving. Check the ENS documentation and ensjs changelog for the latest status before building L2 reverse resolution into production applications.
+</Warning>
+
+## ENSv2 and Native L2 Support
+
+ENSv2 is the next major version of the ENS protocol. It introduces a **hierarchical registry architecture** designed to run natively on L2 networks, rather than using CCIP-Read as an adapter layer. ENSv2 aims to:
+
+- Deploy registries directly on L2 for dramatically lower registration and renewal costs.
+- Preserve L1 as the root of trust for the name hierarchy.
+- Enable seamless cross-L2 resolution without relying on individual gateway deployments.
+
+ENSv2 is in active development. Monitor [the ENS governance forum](https://discuss.ens.domains) and the ENS Labs blog for rollout updates.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Name Resolution" href="/concepts/resolution" icon="magnifying-glass">
+    Understand the full resolution flow that CCIP-Read plugs into.
+  </Card>
+  <Card title="Contract Deployments" href="/concepts/deployments" icon="file-code">
+    Find the Universal Resolver and Registry addresses on Mainnet and Sepolia.
+  </Card>
+</CardGroup>

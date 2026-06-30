@@ -1,0 +1,325 @@
+---
+title: "Working with ENS Records: A Complete Guide"
+sidebarTitle: "Records"
+description: "Learn how to read and write ENS records — text, address, content hash, and more — using viem, wagmi, and the Public Resolver contract."
+---
+
+ENS records are pieces of data stored on a name through its Resolver contract. Think of them as a decentralized profile attached to a name — you can store anything from a Twitter handle to a Bitcoin address to an IPFS content hash. Any application that reads ENS can surface this data, turning your name into a portable identity layer.
+
+## Types of Records
+
+ENS supports several record categories, each serving a different purpose:
+
+| Type | Description | Example |
+|---|---|---|
+| **Text** | Arbitrary key/value strings | `com.twitter` → `nicksdjohnson` |
+| **Address** | Cryptocurrency addresses per coin type | `coinType 60` → `0xb8c2...67d5` |
+| **Content Hash** | IPFS, IPNS, or Swarm hashes for decentralized sites | `ipfs://Qm...` |
+| **ABI** | Smart contract ABI for contract names | JSON-encoded ABI |
+| **Public Key** | Secp256k1 or other public keys | Used for encrypted messaging |
+
+### Standard Text Record Keys
+
+The following text record keys are standardized across the ENS ecosystem (defined in [ENSIP-5](https://docs.ens.domains/ensip/5) and [ENSIP-18](https://docs.ens.domains/ensip/18)):
+
+| Key | Purpose | Example Value |
+|---|---|---|
+| `avatar` | Profile picture URI | `eip155:1/erc721:0x.../1` |
+| `description` | Short bio or description | `Lead developer of ENS` |
+| `display` | Preferred display name | `Nick Johnson` |
+| `email` | Email address | `nick@ens.domains` |
+| `url` | Personal or project website | `https://ens.domains` |
+| `com.twitter` | Twitter/X handle | `nicksdjohnson` |
+| `com.github` | GitHub handle | `arachnid` |
+| `com.discord` | Discord handle | `nick#1234` |
+| `com.telegram` | Telegram handle | `nicksj` |
+| `io.keybase` | Keybase profile | `nicksj` |
+| `location` | Physical location | `New Zealand` |
+| `keywords` | Comma-separated keywords | `ethereum, ens, web3` |
+| `eth.ens.delegate` | ENS governance delegate URL | `https://...` |
+| `header` | Banner/header image URI | `ipfs://Qm...` |
+
+### Custom Records
+
+You can store any key/value pair you like. To avoid collisions with other apps, prefix your custom keys with a reverse-domain namespace — for example `com.myapp.setting` or `xyz.myprotocol.preference`.
+
+---
+
+## Reading Records
+
+### Read a Text Record
+
+<Tabs>
+  <Tab title="wagmi">
+    ```tsx
+    import { normalize } from 'viem/ens'
+    import { useEnsText } from 'wagmi'
+
+    export function TwitterHandle({ name }: { name: string }) {
+      const { data: twitter, isLoading } = useEnsText({
+        name: normalize('alice.eth'),
+        key: 'com.twitter',
+      })
+
+      if (isLoading) return <span>Loading…</span>
+      return <span>Twitter: {twitter ?? 'Not set'}</span>
+    }
+    ```
+  </Tab>
+  <Tab title="viem">
+    ```ts
+    import { createPublicClient, http } from 'viem'
+    import { mainnet } from 'viem/chains'
+    import { normalize } from 'viem/ens'
+
+    const client = createPublicClient({
+      chain: mainnet,
+      transport: http(),
+    })
+
+    const twitter = await client.getEnsText({
+      name: normalize('alice.eth'),
+      key: 'com.twitter',
+    })
+
+    console.log(twitter) // 'alicetweets' or null
+    ```
+  </Tab>
+  <Tab title="ethers v5">
+    ```ts
+    import { ethers } from 'ethers'
+
+    const provider = new ethers.providers.JsonRpcProvider()
+    const resolver = await provider.getResolver('alice.eth')
+    const twitter = await resolver?.getText('com.twitter')
+    ```
+  </Tab>
+</Tabs>
+
+### Read an Ethereum Address
+
+<Tabs>
+  <Tab title="wagmi">
+    ```tsx
+    import { normalize } from 'viem/ens'
+    import { useEnsAddress } from 'wagmi'
+
+    export function EthAddress({ name }: { name: string }) {
+      const { data: address } = useEnsAddress({
+        name: normalize('alice.eth'),
+        chainId: 1,
+      })
+
+      return <span>{address ?? 'No address set'}</span>
+    }
+    ```
+  </Tab>
+  <Tab title="viem">
+    ```ts
+    import { createPublicClient, http } from 'viem'
+    import { mainnet } from 'viem/chains'
+    import { normalize } from 'viem/ens'
+
+    const client = createPublicClient({
+      chain: mainnet,
+      transport: http(),
+    })
+
+    const address = await client.getEnsAddress({
+      name: normalize('alice.eth'),
+    })
+
+    console.log(address) // '0x...' or null
+    ```
+  </Tab>
+</Tabs>
+
+### Read Multiple Records at Once
+
+When you need several records, use `ensjs` to batch requests into a single RPC call:
+
+```ts
+import { createEnsPublicClient } from '@ensdomains/ensjs'
+import { http } from 'viem'
+import { mainnet } from 'viem/chains'
+
+const client = createEnsPublicClient({
+  chain: mainnet,
+  transport: http(),
+})
+
+const records = await client.getRecords({
+  name: 'alice.eth',
+  texts: ['com.twitter', 'com.github', 'description', 'url'],
+  coins: ['eth', 'btc'],
+  contentHash: true,
+})
+
+console.log(records.texts)       // [{ key: 'com.twitter', value: '...' }, ...]
+console.log(records.coins)       // [{ id: 60, name: 'eth', value: '0x...' }, ...]
+console.log(records.contentHash) // { protocolType: 'ipfs', decoded: 'Qm...' }
+```
+
+---
+
+## Setting Records
+
+### Via the ENS App
+
+The easiest way to set records is through [app.ens.domains](https://app.ens.domains). Navigate to your name, open the **Records** tab, and edit values directly. The app batches all your changes into a single `multicall` transaction.
+
+### Via the Public Resolver Contract
+
+You can write records directly to the [Public Resolver](https://docs.ens.domains/resolvers/public) contract. First, get the `namehash` of your name, then call the appropriate setter.
+
+<Steps>
+  <Step title="Compute the namehash">
+    ```ts
+    import { namehash, normalize } from 'viem/ens'
+
+    const node = namehash(normalize('alice.eth'))
+    ```
+  </Step>
+  <Step title="Set a text record">
+    ```ts
+    import { createWalletClient, http } from 'viem'
+    import { mainnet } from 'viem/chains'
+    import { namehash, normalize } from 'viem/ens'
+
+    const walletClient = createWalletClient({
+      chain: mainnet,
+      transport: http(),
+    })
+
+    const PUBLIC_RESOLVER = '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63'
+
+    await walletClient.writeContract({
+      address: PUBLIC_RESOLVER,
+      abi: [
+        {
+          name: 'setText',
+          type: 'function',
+          inputs: [
+            { name: 'node', type: 'bytes32' },
+            { name: 'key', type: 'string' },
+            { name: 'value', type: 'string' },
+          ],
+        },
+      ],
+      functionName: 'setText',
+      args: [
+        namehash(normalize('alice.eth')),
+        'com.twitter',
+        'alicetweets',
+      ],
+    })
+    ```
+  </Step>
+</Steps>
+
+### Batch Multiple Updates with `multicall`
+
+The Public Resolver implements `multicall`, which lets you set several records in a single transaction — saving gas and reducing the number of wallet prompts.
+
+```ts
+import { encodeFunctionData, createWalletClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+import { namehash, normalize } from 'viem/ens'
+
+const node = namehash(normalize('alice.eth'))
+const PUBLIC_RESOLVER = '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63'
+
+const resolverAbi = [
+  {
+    name: 'setText',
+    type: 'function',
+    inputs: [
+      { name: 'node', type: 'bytes32' },
+      { name: 'key', type: 'string' },
+      { name: 'value', type: 'string' },
+    ],
+  },
+  {
+    name: 'multicall',
+    type: 'function',
+    inputs: [{ name: 'data', type: 'bytes[]' }],
+    outputs: [{ name: 'results', type: 'bytes[]' }],
+  },
+] as const
+
+const calls = [
+  encodeFunctionData({
+    abi: resolverAbi,
+    functionName: 'setText',
+    args: [node, 'com.twitter', 'alicetweets'],
+  }),
+  encodeFunctionData({
+    abi: resolverAbi,
+    functionName: 'setText',
+    args: [node, 'description', 'Building on ENS'],
+  }),
+  encodeFunctionData({
+    abi: resolverAbi,
+    functionName: 'setText',
+    args: [node, 'url', 'https://alice.xyz'],
+  }),
+]
+
+const walletClient = createWalletClient({ chain: mainnet, transport: http() })
+
+await walletClient.writeContract({
+  address: PUBLIC_RESOLVER,
+  abi: resolverAbi,
+  functionName: 'multicall',
+  args: [calls],
+})
+```
+
+<Tip>
+  Use `multicall` whenever you need to update more than one record. It collapses all changes into a single transaction, cutting gas costs significantly.
+</Tip>
+
+---
+
+## Content Hash Records
+
+Content hashes point to decentralized websites or files hosted on IPFS, IPNS, or Swarm. Set them through the ENS app or call `setContenthash` on the Public Resolver.
+
+```ts
+import { createWalletClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+import { namehash, normalize } from 'viem/ens'
+
+// The content hash must be ABI-encoded per ENSIP-7.
+// The ENS app and ensjs handle this encoding for you.
+// Example: IPFS CIDv1 encoded as hex bytes
+const contentHash = '0xe3010170122029f2d17be6139079dc4...' // encoded IPFS CID
+
+await walletClient.writeContract({
+  address: '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63',
+  abi: [
+    {
+      name: 'setContenthash',
+      type: 'function',
+      inputs: [
+        { name: 'node', type: 'bytes32' },
+        { name: 'hash', type: 'bytes' },
+      ],
+    },
+  ],
+  functionName: 'setContenthash',
+  args: [namehash(normalize('alice.eth')), contentHash],
+})
+```
+
+<Note>
+  Always normalize ENS names with `normalize()` from `viem/ens` before hashing or resolving them. Normalization ensures the name conforms to ENSIP-15 and prevents subtle bugs with accented characters, uppercase letters, and zero-width spaces.
+</Note>
+
+---
+
+## Key Concepts
+
+- **Resolver contract**: Each ENS name points to a Resolver. The Resolver is the contract that actually stores and returns records. Most names use the shared [Public Resolver](https://docs.ens.domains/resolvers/public).
+- **namehash**: ENS identifies names internally by their `namehash` (a deterministic bytes32 hash of the full name). Libraries like viem and ethers compute this automatically.
+- **ENSIP-5 / ENSIP-18**: The standards defining canonical text record keys. Follow them so your records work across all ENS-aware applications.

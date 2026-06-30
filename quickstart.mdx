@@ -1,47 +1,205 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Quickstart: Integrate ENS into Your dApp"
+sidebarTitle: "Quickstart"
+description: "Add ENS name resolution, avatar display, and reverse lookup to a React dApp using wagmi v2 and viem in under 10 minutes."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
+This guide walks you through integrating ENS into a React dApp using **wagmi v2** and **viem**. By the end you will display the connected user's ENS name and avatar, resolve any ENS name to an address, and reverse-resolve an address back to a name.
 
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+<Note>
+  ENS resolution always reads from Ethereum Mainnet (L1), regardless of which chain the user is connected to. Always pass `chainId: 1` to ENS-related wagmi hooks.
+</Note>
 
 ## Prerequisites
 
-Before you begin, you must have:
+- A React project (Vite, Next.js, or Create React App all work)
+- Node.js 18+
+- A basic understanding of React hooks
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
+## Step 1 — Install dependencies
 
-## Get started
+Install wagmi, viem, and the required peer dependency `@tanstack/react-query`:
 
-<Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+<CodeGroup>
 
-    ```bash
-    npm install your-package
-    ```
-  </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+```bash npm
+npm install wagmi viem @tanstack/react-query
+```
 
-    ```bash
-    your-cli init
-    ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+```bash yarn
+yarn add wagmi viem @tanstack/react-query
+```
 
-    ```bash
-    your-cli start
-    ```
-  </Step>
-</Steps>
+```bash pnpm
+pnpm add wagmi viem @tanstack/react-query
+```
+
+</CodeGroup>
+
+## Step 2 — Configure wagmi
+
+Create a wagmi config that includes Ethereum Mainnet and wrap your app with the required providers:
+
+```tsx config.ts
+import { createConfig, http } from 'wagmi'
+import { mainnet } from 'wagmi/chains'
+
+export const config = createConfig({
+  chains: [mainnet],
+  transports: {
+    [mainnet.id]: http(),
+  },
+})
+```
+
+```tsx main.tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { WagmiProvider } from 'wagmi'
+import { config } from './config'
+
+const queryClient = new QueryClient()
+
+export function App() {
+  return (
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        {/* your app */}
+      </QueryClientProvider>
+    </WagmiProvider>
+  )
+}
+```
+
+## Step 3 — Display the connected user's ENS profile
+
+Use `useEnsName` and `useEnsAvatar` to show the connected wallet's ENS name and avatar. The `useAccount` hook provides the current address:
+
+```tsx EnsProfile.tsx
+import { useAccount, useEnsAvatar, useEnsName } from 'wagmi'
+import { normalize } from 'viem/ens'
+
+export function EnsProfile() {
+  const { address } = useAccount()
+
+  // Resolve address → ENS name (reverse resolution)
+  const { data: name } = useEnsName({
+    address,
+    chainId: 1, // always mainnet
+  })
+
+  // Resolve ENS name → avatar URL
+  const { data: avatar } = useEnsAvatar({
+    name: name ? normalize(name) : undefined,
+    chainId: 1,
+  })
+
+  if (!address) return <p>Connect your wallet to see your ENS profile.</p>
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      {avatar && (
+        <img
+          src={avatar}
+          alt={name ?? address}
+          style={{ width: 40, height: 40, borderRadius: '50%' }}
+        />
+      )}
+      <div>
+        <p style={{ fontWeight: 600 }}>{name ?? 'No ENS name set'}</p>
+        <p style={{ fontSize: '0.875rem', color: '#888' }}>{address}</p>
+      </div>
+    </div>
+  )
+}
+```
 
 <Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
-
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+  Always normalize ENS names with `normalize()` from `viem/ens` before passing them to hooks. This prevents resolution failures caused by unnormalized Unicode characters.
 </Tip>
+
+## Step 4 — Resolve an ENS name to an address
+
+Use `useEnsAddress` to perform forward resolution — converting an ENS name into an Ethereum address:
+
+```tsx ResolveEnsName.tsx
+import { useState } from 'react'
+import { useEnsAddress } from 'wagmi'
+import { normalize } from 'viem/ens'
+
+export function ResolveEnsName() {
+  const [input, setInput] = useState('alice.eth')
+
+  const { data: address, isLoading } = useEnsAddress({
+    name: normalize(input),
+    chainId: 1,
+  })
+
+  return (
+    <div>
+      <input
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        placeholder="Enter ENS name"
+      />
+      {isLoading && <p>Resolving…</p>}
+      {address && (
+        <p>
+          <strong>{input}</strong> resolves to <code>{address}</code>
+        </p>
+      )}
+      {!isLoading && !address && input && (
+        <p>No address found for {input}</p>
+      )}
+    </div>
+  )
+}
+```
+
+## Step 5 — Reverse resolve an address to a name
+
+Use `useEnsName` directly with any `0x` address to look up the primary name the owner has set:
+
+```tsx ReverseResolve.tsx
+import { useEnsName } from 'wagmi'
+
+// Vitalik's address as an example
+const TARGET_ADDRESS = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+
+export function ReverseResolve() {
+  const { data: name, isLoading } = useEnsName({
+    address: TARGET_ADDRESS,
+    chainId: 1,
+  })
+
+  if (isLoading) return <p>Looking up name…</p>
+
+  return (
+    <p>
+      <code>{TARGET_ADDRESS.slice(0, 6)}…{TARGET_ADDRESS.slice(-4)}</code>
+      {' → '}
+      <strong>{name ?? '(no primary name set)'}</strong>
+    </p>
+  )
+}
+```
+
+<Warning>
+  Reverse resolution only returns a name if the owner has explicitly set a **primary name** (reverse record) for that address. Many addresses have no primary name set — always handle the `null` / `undefined` case gracefully.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Manage Records" icon="pen-to-square" href="/guides/records">
+    Learn how to set multi-chain addresses, text records, and content hashes on an ENS name.
+  </Card>
+  <Card title="Protocol Concepts" icon="network-wired" href="/concepts/protocol">
+    Understand the registry, resolvers, namehash, and the full ENS architecture.
+  </Card>
+  <Card title="Terminology" icon="book" href="/terminology">
+    Look up any ENS term — from labelhash to CCIP-Read to NameWrapper fuses.
+  </Card>
+  <Card title="FAQ" icon="circle-question" href="/faq">
+    Get answers to common questions about registration, records, and governance.
+  </Card>
+</CardGroup>

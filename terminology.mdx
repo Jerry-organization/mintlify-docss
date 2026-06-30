@@ -1,0 +1,167 @@
+---
+title: "ENS Terminology: Glossary of Key Concepts"
+sidebarTitle: "Terminology"
+description: "A complete glossary of ENS terms — from namehash and labelhash to CCIP-Read, NameWrapper fuses, and reverse resolution."
+---
+
+This glossary defines the core terms you will encounter throughout the ENS documentation and codebase. Click any term to expand its definition.
+
+## Names and structure
+
+<AccordionGroup>
+  <Accordion title="Name">
+    An ENS identifier such as `alice.eth`. Names consist of one or more **labels** separated by dots and can exist at any level of the hierarchy — for example, `name.eth`, `sub.name.eth`, or even an imported DNS name like `mysite.xyz`.
+  </Accordion>
+
+  <Accordion title="2LD — Second-Level Domain">
+    A name that sits directly beneath a Top-Level Domain (TLD). For example, `alice.eth` and `mysite.com` are both second-level domains. The term **3LD** (third-level domain) refers to names one level below a 2LD, such as `sub.alice.eth`.
+  </Accordion>
+
+  <Accordion title="Subname / Subdomain">
+    A child name whose parent is another ENS name. For example, `pay.alice.eth` is a subname of `alice.eth`. Anyone who owns a name at any level can create subnames beneath it — no additional protocol fee is required. Subnames can have their own owners, resolvers, and records.
+  </Accordion>
+
+  <Accordion title="TLD — Top-Level Domain">
+    The rightmost component of a name, such as `.eth`, `.com`, or `.xyz`. In ENS, `.eth` is the primary trustless TLD. Each TLD is owned and governed by a registrar smart contract that sets the rules for allocating names beneath it.
+  </Accordion>
+
+  <Accordion title="Label">
+    An individual dot-separated component of a name. In `sub.alice.eth`, the labels are `sub`, `alice`, and `eth`. Labels are the atomic building blocks that the namehash algorithm processes.
+  </Accordion>
+</AccordionGroup>
+
+## Cryptographic identifiers
+
+<AccordionGroup>
+  <Accordion title="Labelhash">
+    The `keccak256` hash of a single label (before normalization). For example, the labelhash of `alice` is `keccak256('alice')`. Labelhashes are used internally by the ENS registry and are also the token IDs for `.eth` names on the ETH Registrar.
+  </Accordion>
+
+  <Accordion title="Namehash">
+    The algorithm that converts a full ENS name into a single 32-byte cryptographic identifier called a **node**. Namehash works recursively from right to left: `namehash('alice.eth') = keccak256(namehash('eth') + labelhash('alice'))`. The namehash of the empty string (root) is 32 zero bytes. This design means that a parent node can always derive a child node, but knowledge of a child node does not reveal the parent.
+  </Accordion>
+
+  <Accordion title="Node">
+    The 32-byte output of the namehash algorithm for a given ENS name. The ENS registry maps nodes to owners, resolvers, and TTL values. When developers talk about interacting with "a name" in a contract, they almost always mean its node.
+  </Accordion>
+</AccordionGroup>
+
+## Ownership and control
+
+<AccordionGroup>
+  <Accordion title="Owner">
+    The account listed in the ENS registry's `owner` field for a given node. The owner can transfer ownership of the name, set or change the resolver, and create or reassign subnames. For `.eth` 2LDs, the owner is also called the **registrant** in the context of the ETH Registrar.
+  </Accordion>
+
+  <Accordion title="Manager">
+    The account authorized to edit the records of a name without holding full ownership. The Manager role lets you delegate day-to-day record management to a separate wallet (for example, a hot wallet) while keeping ownership in a cold wallet.
+  </Accordion>
+</AccordionGroup>
+
+## Records and resolution
+
+<AccordionGroup>
+  <Accordion title="Record">
+    A piece of information that an ENS name resolves to. Common record types include: **address records** (ETH and multi-chain), **text records** (Twitter, GitHub, email, URL, description), and **content hashes** (for decentralized websites). Records are stored in a Resolver contract, not the registry itself.
+  </Accordion>
+
+  <Accordion title="Resolver">
+    A smart contract that stores and returns records for ENS names. The ENS registry maps each name to a resolver address; when a client resolves a name, it reads the resolver address from the registry and then calls that resolver for the specific record. Anyone can write a custom resolver.
+  </Accordion>
+
+  <Accordion title="Public Resolver">
+    The default resolver contract deployed and maintained by ENS Labs. It supports all standard record types (addresses, text records, content hashes, and more) and is the resolver automatically assigned when you register a new name through the ENS Manager App.
+  </Accordion>
+
+  <Accordion title="Universal Resolver">
+    A resolver that can resolve any ENS name by traversing the resolver chain automatically — including names with custom resolvers or offchain (CCIP-Read) resolvers. It provides a single entry point for clients that need to resolve arbitrary names without knowing the resolver in advance.
+  </Accordion>
+
+  <Accordion title="Wildcard Resolver">
+    A resolver that implements [ENSIP-10](https://docs.ens.domains/ensip/10) and can return records for subnames that do not have their own resolver set — or that do not even exist onchain. Wildcard resolvers are the foundation for large-scale offchain subname issuance, typically used together with CCIP-Read.
+  </Accordion>
+
+  <Accordion title="TTL — Time To Live">
+    A field stored in the ENS registry alongside the resolver. It hints to clients how long (in seconds) they may cache the resolved data before re-querying. Setting a low TTL is useful if you expect records to change frequently.
+  </Accordion>
+</AccordionGroup>
+
+## Registration
+
+<AccordionGroup>
+  <Accordion title="Registrar">
+    A smart contract responsible for allocating subdomains beneath a given node. The ETH Registrar manages `.eth` 2LD registrations. Registrars can be deployed at any level — for example, a project could deploy its own registrar to issue `user.myproject.eth` subnames to its community.
+  </Accordion>
+
+  <Accordion title="Registry">
+    The central ENS contract that maps every name (represented as a node) to three values: its **owner**, its **resolver**, and its **TTL**. All ENS resolution starts with a lookup in the registry. The registry itself does not store records — it only points to the resolver that does.
+  </Accordion>
+
+  <Accordion title="Expiry">
+    The timestamp after which an ENS name is no longer considered active. For `.eth` 2LDs, expiry means the owner loses their claim on the name after the grace period. For wrapped subnames, the behavior depends on whether the name has been emancipated.
+  </Accordion>
+
+  <Accordion title="Grace Period">
+    A 90-day window after a `.eth` name expires during which the original owner can still renew and retain the name without losing it to another registrant. After the grace period ends, the name becomes available for anyone to register, initially with a temporary premium that decreases over 21 days.
+  </Accordion>
+</AccordionGroup>
+
+## Reverse resolution
+
+<AccordionGroup>
+  <Accordion title="Primary Name">
+    The ENS name you designate as the canonical identifier for a specific Ethereum address. When set, ENS-aware apps and wallets display your `.eth` name instead of your `0x` address. Also referred to as the **reverse record**. You set your primary name in the ENS Manager App under "Reverse Record."
+  </Accordion>
+
+  <Accordion title="Reverse Resolution">
+    The process of mapping an Ethereum address (`0x...`) back to an ENS name. This is the inverse of forward resolution. Reverse resolution relies on a special `[addr].addr.reverse` node in the registry. Only the address holder can set their own reverse record.
+  </Accordion>
+
+  <Accordion title="Reverse Registrar">
+    The ENS contract that manages `addr.reverse` claims. It allows any Ethereum account to claim a reverse node for their address and then set a primary name on it.
+  </Accordion>
+</AccordionGroup>
+
+## Offchain and Layer 2
+
+<AccordionGroup>
+  <Accordion title="CCIP-Read">
+    Short for **Cross-Chain Interoperability Protocol Read** ([EIP-3668](https://eips.ethereum.org/EIPS/eip-3668)). CCIP-Read allows an Ethereum smart contract to defer a request to an offchain HTTP gateway and then securely verify the returned data onchain. In ENS, CCIP-Read powers offchain subname resolution — a resolver can serve millions of subnames from a database without any on-chain state per name.
+  </Accordion>
+
+  <Accordion title="Offchain Resolution">
+    Resolving ENS names whose records are not stored in an Ethereum Mainnet transaction. Offchain resolvers use CCIP-Read to fetch data from an external gateway (a database, an L2, or any API) and verify it onchain. This dramatically reduces gas costs for large-scale subname deployments.
+  </Accordion>
+</AccordionGroup>
+
+## NameWrapper and permissions
+
+<AccordionGroup>
+  <Accordion title="NameWrapper">
+    An ENS contract that wraps any ENS name into an **ERC-1155 NFT**, enabling fine-grained permission control over names and subnames via a system called **fuses**. Wrapping a `.eth` 2LD converts it from an ERC-721 token into an ERC-1155 token.
+  </Accordion>
+
+  <Accordion title="Wrapped Name">
+    An ENS name that has been deposited into the NameWrapper contract and is now represented as an ERC-1155 NFT. Wrapped names gain access to the fuse permission system and can issue trustless subnames.
+  </Accordion>
+
+  <Accordion title="Fuse">
+    A one-way permission bit on a wrapped ENS name. Once a fuse is "burned," that permission is permanently revoked until the name expires — it cannot be re-enabled. Fuses allow a name owner to make credible commitments to subname holders (for example, proving that the parent can never revoke a subname).
+  </Accordion>
+
+  <Accordion title="Emancipated">
+    A wrapped subname is considered emancipated when its parent has burned the fuse that would allow the parent to replace or delete it. An emancipated subname has a guaranteed independent existence until its own expiry, making it trustless from the subname holder's perspective.
+  </Accordion>
+</AccordionGroup>
+
+## Protocols and standards
+
+<AccordionGroup>
+  <Accordion title="ENSIP — ENS Improvement Proposal">
+    The specification process for new ENS features and standards, analogous to Ethereum's EIPs. ENSIPs define things like new record types, resolver interfaces, and name normalization rules. You can browse all ENSIPs at [docs.ens.domains/ensip](https://docs.ens.domains/ensip).
+  </Accordion>
+
+  <Accordion title="Subgraph">
+    An indexed data service built on [The Graph](https://thegraph.com) protocol. The official ENS subgraph, maintained by ENS Labs, indexes on-chain ENS events and allows clients to query name ownership, registration history, records, and more using GraphQL — without scanning the chain themselves.
+  </Accordion>
+</AccordionGroup>

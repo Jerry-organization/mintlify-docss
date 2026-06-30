@@ -1,0 +1,203 @@
+---
+title: "Reverse Registrar: Set Your Primary ENS Name"
+sidebarTitle: "Reverse Registrar"
+description: "Map an Ethereum address to an ENS name using the Reverse Registrar. Covers setName, signatures, L2 support, and deployed addresses."
+---
+
+The Reverse Registrar maps an Ethereum address back to an ENS name. This is the contract that powers the **primary name** feature: when a wallet or dapp displays `alice.eth` instead of `0x1234…5678`, it is reading a reverse record set through this contract.
+
+Reverse records are stored in special namespaces in the ENS Registry:
+
+| Chain | Reverse Namespace |
+|---|---|
+| Ethereum (default) | `addr.reverse` |
+| Arbitrum | `8000a4b1.reverse` |
+| Base | `80002105.reverse` |
+| Linea | `8000e708.reverse` |
+| Optimism | `8000000a.reverse` |
+| Scroll | `80082750.reverse` |
+
+L2 namespaces follow the pattern `[coinTypeAsHex].reverse`, as defined in ENSIP-19.
+
+<Warning>
+  Never force a user to change their primary name without explicit consent. Doing so without clearly explaining what the transaction will modify is hostile behaviour that will degrade user trust in your application.
+</Warning>
+
+## Deployed Addresses
+
+<Tabs>
+  <Tab title="Mainnet">
+    | Chain | Address |
+    |---|---|
+    | Ethereum (default) | `0x283F227c4Bd38ecE252C4Ae7ECE650B0e913f1f9` |
+    | Ethereum | `0xa58E81fe9b61B5c3fE2AFD33CF304c454AbFc7Cb` |
+    | Arbitrum One | `0x0000000000D8e504002cC26E3Ec46D81971C1664` |
+    | Base | `0x0000000000D8e504002cC26E3Ec46D81971C1664` |
+    | Linea | `0x0000000000D8e504002cC26E3Ec46D81971C1664` |
+    | Optimism | `0x0000000000D8e504002cC26E3Ec46D81971C1664` |
+    | Scroll | `0x0000000000D8e504002cC26E3Ec46D81971C1664` |
+  </Tab>
+  <Tab title="Testnet (Sepolia)">
+    | Chain | Address |
+    |---|---|
+    | Ethereum (default) | `0x4F382928805ba0e23B30cFB75fC9E848e82DFD47` |
+    | Ethereum | `0xA0a1AbcDAe1a2a4A2EF8e9113Ff0e02DD81DC0C6` |
+    | Arbitrum Sepolia | `0x00000BeEF055f7934784D6d81b6BC86665630dbA` |
+    | Base Sepolia | `0x00000BeEF055f7934784D6d81b6BC86665630dbA` |
+    | Linea Sepolia | `0x00000BeEF055f7934784D6d81b6BC86665630dbA` |
+    | Optimism Sepolia | `0x00000BeEF055f7934784D6d81b6BC86665630dbA` |
+    | Scroll Sepolia | `0x00000BeEF055f7934784D6d81b6BC86665630dbA` |
+  </Tab>
+</Tabs>
+
+<Note>
+  Do not hardcode Reverse Registrar addresses in your application. Resolve them dynamically according to ENSIP-19 to avoid breakage if the contracts are upgraded.
+</Note>
+
+## Setting a Primary Name
+
+### For your own address
+
+Call `setName` directly from the address you want to configure:
+
+```solidity
+/// @notice Sets the reverse record for the calling address.
+/// @param name The ENS name to associate with msg.sender
+/// @return The ENS node hash of the reverse record
+function setName(string memory name) external returns (bytes32)
+```
+
+```typescript
+import { createWalletClient, custom } from 'viem'
+import { mainnet } from 'viem/chains'
+
+const wallet = createWalletClient({ chain: mainnet, transport: custom(window.ethereum) })
+
+await wallet.writeContract({
+  address: '0xa58E81fe9b61B5c3fE2AFD33CF304c454AbFc7Cb',
+  abi: reverseRegistrarAbi,
+  functionName: 'setName',
+  args: ['alice.eth'],
+})
+```
+
+### For another address (with permission)
+
+Use `setNameForAddr` to set the reverse record of another EOA or smart contract. The caller must be approved by that address (via `setApprovalForAll` or a valid signature):
+
+```solidity
+/// @notice Sets the reverse record for the specified address.
+/// @param addr    The address to configure
+/// @param name    The ENS name to associate with addr
+/// @return The ENS node hash of the reverse record
+function setNameForAddr(
+  address addr,
+  string memory name
+) external returns (bytes32)
+```
+
+### For a smart contract (signature-based)
+
+For contracts that implement `Ownable`, use `setNameForOwnableWithSignature` to set the reverse record without the contract owner calling from that address:
+
+```solidity
+function setNameForOwnableWithSignature(
+  address contractAddr,
+  address owner,
+  string calldata name,
+  uint256[] memory coinTypes,
+  uint256 signatureExpiry,
+  bytes calldata signature
+) external returns (bytes32)
+```
+
+The signature must be constructed as:
+
+```
+validatorAddress   // address of the Reverse Registrar
+functionSignature  // 0x975713ad
+name               // the name string value
+contractAddr       // the contract address
+owner              // owner of the contract (signer)
+coinTypes          // array of coin types to set
+signatureExpiry    // Unix timestamp, up to 1 hour in the future
+```
+
+### For any address with a signature
+
+Use `setNameForAddrWithSignature` to let a relayer set the reverse record on behalf of an address using an off-chain signature from that address:
+
+```solidity
+function setNameForAddrWithSignature(
+  address addr,
+  string calldata name,
+  uint256[] calldata coinTypes,
+  uint256 signatureExpiry,
+  bytes calldata signature
+) external returns (bytes32)
+```
+
+Signature payload:
+
+```
+validatorAddress   // address of the Reverse Registrar
+functionSignature  // 0x2023a04c
+name               // the name string value
+addr               // address to set the name for
+coinTypes          // array of coin types
+signatureExpiry    // Unix timestamp, up to 1 hour in the future
+```
+
+## Claiming a Reverse Record (Advanced)
+
+These functions give you lower-level control over the reverse record. They are available on the Ethereum Reverse Registrar only and are useful if you want to own the reverse node without setting a name:
+
+```solidity
+// Claim ownership of the caller's reverse record, assigning it to 'owner'
+function claim(address owner) external returns (bytes32)
+
+// Claim and also assign a resolver in one transaction
+function claimWithResolver(address owner, address resolver) external returns (bytes32)
+```
+
+After calling `claim`, the reverse record for `msg.sender` (i.e. `<address>.addr.reverse`) is owned by `owner`. Use `setName` if you simply want to point your address to an ENS name.
+
+## Reading the Default Resolver
+
+```solidity
+// Returns the resolver the ReverseRegistrar uses when you call setName
+function defaultResolver() external view returns (address)
+```
+
+## Full Example: Set Primary Name on L2
+
+```typescript
+import { createWalletClient, custom } from 'viem'
+import { base } from 'viem/chains'
+
+// Use the Base chain's Reverse Registrar
+const REVERSE_REGISTRAR_BASE = '0x0000000000D8e504002cC26E3Ec46D81971C1664'
+
+const wallet = createWalletClient({
+  chain: base,
+  transport: custom(window.ethereum),
+})
+
+await wallet.writeContract({
+  address: REVERSE_REGISTRAR_BASE,
+  abi: [
+    {
+      name: 'setName',
+      type: 'function',
+      inputs: [{ name: 'name', type: 'string' }],
+      outputs: [{ type: 'bytes32' }],
+    },
+  ],
+  functionName: 'setName',
+  args: ['alice.eth'],
+})
+```
+
+<Tip>
+  Setting a primary name on Base (or any L2) creates a chain-specific reverse record. When no chain-specific record exists, resolvers fall back to the L1 Ethereum reverse record as defined in ENSIP-19.
+</Tip>

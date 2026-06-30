@@ -1,0 +1,100 @@
+---
+title: "Introduction to Ethereum Name Service (ENS)"
+sidebarTitle: "Introduction"
+description: "Learn what ENS is, how human-readable names map to blockchain identifiers, and how to start using ENS names in your projects."
+---
+
+ENS (Ethereum Name Service) is a decentralized, open naming protocol built on the Ethereum blockchain. Instead of copying and pasting long hexadecimal addresses, ENS lets you send crypto to `alice.eth`, visit a decentralized website at `myproject.eth`, and build a portable Web3 identity that travels with you across every ENS-integrated app.
+
+## What problem does ENS solve?
+
+Ethereum addresses — like `0x4cbe58c50480...` — are secure but impossible to remember and easy to mistype. ENS bridges the gap between human-friendly names and machine-readable identifiers, the same way DNS bridges `google.com` and its underlying IP address. Unlike DNS, ENS is fully on-chain: names are registered through smart contracts, owned as NFTs, and resolved without any central authority.
+
+## Key use cases
+
+<CardGroup cols={2}>
+  <Card title="Send crypto" icon="paper-plane" href="/guides/records">
+    Share your `.eth` name instead of a raw address. Anyone who knows `alice.eth` can send ETH, ERC-20 tokens, or assets on other chains directly to you.
+  </Card>
+  <Card title="Decentralized websites" icon="globe" href="/guides/records">
+    Point your ENS name to an IPFS or IPNS content hash and host a fully decentralized website that no one can take down.
+  </Card>
+  <Card title="Web3 identity" icon="id-card" href="/guides/records">
+    Attach your avatar, bio, Twitter handle, GitHub profile, email, and more as text records — one unified identity across the decentralized web.
+  </Card>
+  <Card title="Programmatic subnames" icon="sitemap" href="/concepts/protocol">
+    Issue subnames like `user.yourproject.eth` to your community or app users with your own custom resolver logic.
+  </Card>
+</CardGroup>
+
+## How names are structured
+
+ENS names follow a hierarchical dot-separated structure, read from right to left:
+
+```text
+sub.alice.eth
+ │     │   └─ TLD (Top-Level Domain) — managed by the ENS root
+ │     └───── 2LD (Second-Level Domain) — owned by alice, an ERC-721 NFT
+ └─────────── Subname — created and controlled by alice
+```
+
+- **TLDs** like `.eth` sit at the top of the hierarchy and are managed by smart contract registrars.
+- **Second-level names** like `alice.eth` are the names you register. Each one is an ERC-721 NFT (or ERC-1155 when wrapped).
+- **Subnames** like `pay.alice.eth` can be created by the owner of the parent name at no additional protocol fee.
+
+ENS also supports importing existing **DNS names** (`.com`, `.xyz`, `.art`, etc.) via DNSSEC, giving DNS name owners a path into the ENS ecosystem without requiring a separate `.eth` registration.
+
+## Records: what a name resolves to
+
+Every ENS name can store multiple records:
+
+| Record type | Example value | Purpose |
+|---|---|---|
+| ETH address | `0x4cbe58c5...` | Receive ETH and ERC-20 tokens |
+| Multi-chain address | Bitcoin, Solana, etc. | Receive assets on other chains |
+| Content hash | `ipfs://Qm...` | Host a decentralized website |
+| Text records | `com.twitter`, `email` | Build a rich on-chain profile |
+
+## Reverse resolution and primary names
+
+Forward resolution maps `alice.eth → 0x...`. **Reverse resolution** maps `0x... → alice.eth`. When you set a **primary name** in the ENS Manager App, wallets and dApps can look up your address and display your `.eth` name automatically — no extra action required from the viewer.
+
+## Name lifecycle and pricing
+
+.eth names are registered for a minimum of one year. Pricing is set by the ETH Registrar:
+
+| Name length | Annual price |
+|---|---|
+| 5+ characters | $5 / year (in ETH) |
+| 4 characters | $160 / year (in ETH) |
+| 3 characters | $640 / year (in ETH) |
+
+When a name expires, the original owner has a **90-day grace period** to renew before the name re-enters the public pool. ENS names are NFTs, so you can also transfer or trade them on any ERC-721 marketplace.
+
+<Note>
+  Pricing is denominated in USD but paid in ETH at the current exchange rate at the time of registration.
+</Note>
+
+## Managing names with the ENS Manager App
+
+The [ENS Manager App](https://app.ens.domains) is the official web interface for registering names, updating records, creating subnames, and setting your primary name. You connect with any EVM-compatible wallet and interact directly with the ENS contracts — no sign-up required.
+
+## Integrating ENS in your code
+
+ENS provides first-class support for JavaScript/TypeScript developers through three complementary libraries:
+
+<CardGroup cols={3}>
+  <Card title="wagmi" icon="react" href="https://wagmi.sh">
+    React hooks for ENS resolution, name lookup, and avatar display. The recommended choice for React dApps.
+  </Card>
+  <Card title="viem" icon="code" href="https://viem.sh">
+    Low-level, type-safe Ethereum client with built-in ENS actions. Ideal for non-React environments or when you need fine-grained control.
+  </Card>
+  <Card title="ensjs" icon="ethereum" href="https://github.com/ensdomains/ensjs">
+    ENS-specific library with full support for registration, records, subnames, and more — built on top of viem.
+  </Card>
+</CardGroup>
+
+<Tip>
+  Ready to add ENS to your dApp right now? Follow the [Quickstart guide](/quickstart) to resolve your first ENS name in under five minutes.
+</Tip>

@@ -1,0 +1,277 @@
+---
+title: "ETH Registrar: Register and Renew .eth Names"
+sidebarTitle: "ETH Registrar"
+description: "Register .eth names using the commit-reveal scheme, check pricing, and renew names via the ETHRegistrarController and BaseRegistrar contracts."
+---
+
+The ETH Registrar is the smart contract system responsible for the `.eth` top-level domain. It handles trustless on-chain registration, renewal, and ownership transfers of `.eth` second-level names like `alice.eth`. It is split into two contracts with distinct responsibilities.
+
+## BaseRegistrar vs ETHRegistrarController
+
+<CardGroup cols={2}>
+  <Card title="BaseRegistrar" icon="shield">
+    Manages ERC-721 NFT ownership of `.eth` names. Handles transfers, approvals, and expiry. Deployed at `0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85`.
+  </Card>
+  <Card title="ETHRegistrarController" icon="pen-to-square">
+    Handles registration and renewal, including pricing, commit-reveal, and forwarding funds to the ENS treasury. Deployed at `0x253553366Da8546fC250F225fe3d25d0C782303b`.
+  </Card>
+</CardGroup>
+
+This separation protects name owners: even if the Controller is upgraded, the BaseRegistrar guarantees continued ownership of your name as long as it's registered.
+
+## Pricing
+
+Registration fees are denominated in USD but paid in ETH at the current exchange rate. Any protocol revenue flows to the ENS DAO treasury.
+
+| Name Length | Price (USD/year) |
+|---|---|
+| 5+ characters | $5 |
+| 4 characters | $160 |
+| 3 characters | $640 |
+
+<Note>
+  The minimum name length is 3 characters. There are no 1- or 2-character `.eth` names available through standard registration.
+</Note>
+
+### Temporary Premium Auction
+
+After a name expires, there is a **90-day grace period** during which the previous owner can renew without paying a premium. Once the grace period ends, the name enters a **21-day Dutch auction** that starts at approximately $100,000,000 USD and decays exponentially to $0. This prevents sniping and ensures that highly sought-after names go to the highest bidder.
+
+<Tip>
+  Use `rentPrice(name, duration)` before registering an expired name to check whether the auction premium applies. Send 3–5% extra ETH to account for price fluctuations — any unused amount is refunded.
+</Tip>
+
+## Registering a Name
+
+Registration uses a **commit-reveal** scheme to prevent front-running. You first submit an opaque commitment, wait at least 60 seconds, then reveal and register.
+
+<Steps>
+  <Step title="Check availability">
+    Confirm the name is available before building your commitment.
+
+    ```solidity
+    ETHRegistrarController.available(string name) view returns (bool)
+    ```
+
+    ```typescript
+    const isAvailable = await client.readContract({
+      address: '0x253553366Da8546fC250F225fe3d25d0C782303b',
+      abi: controllerAbi,
+      functionName: 'available',
+      args: ['alice'], // just the label, not 'alice.eth'
+    })
+    ```
+  </Step>
+  <Step title="Get the price">
+    Fetch the current rent price before committing.
+
+    ```solidity
+    ETHRegistrarController.rentPrice(string name, uint256 duration)
+      view returns (uint256 base, uint256 premium)
+    ```
+
+    ```typescript
+    const [base, premium] = await client.readContract({
+      address: '0x253553366Da8546fC250F225fe3d25d0C782303b',
+      abi: controllerAbi,
+      functionName: 'rentPrice',
+      args: ['alice', 31536000n], // 1 year in seconds
+    })
+    const totalPrice = base + premium
+    ```
+  </Step>
+  <Step title="Generate the commitment hash">
+    Build a commitment using a randomly-generated secret. Keep this secret — you'll need it for the `register` call.
+
+    ```solidity
+    ETHRegistrarController.makeCommitment(
+      string name,
+      address owner,
+      uint256 duration,
+      bytes32 secret,
+      address resolver,
+      bytes[] data,
+      bool reverseRecord,
+      uint16 ownerControlledFuses
+    ) view returns (bytes32)
+    ```
+
+    ```typescript
+    import { randomBytes } from 'crypto'
+    import { encodeFunctionData, parseAbi } from 'viem'
+
+    const secret = `0x${randomBytes(32).toString('hex')}`
+
+    // Optional: encode resolver calls to run during registration
+    const resolverData = [
+      encodeFunctionData({
+        abi: parseAbi(['function setAddr(bytes32,address)']),
+        functionName: 'setAddr',
+        args: [namehash('alice.eth'), ownerAddress],
+      }),
+    ]
+
+    const commitment = await client.readContract({
+      address: '0x253553366Da8546fC250F225fe3d25d0C782303b',
+      abi: controllerAbi,
+      functionName: 'makeCommitment',
+      args: [
+        'alice',          // label only
+        ownerAddress,     // who will own the name
+        31536000n,        // 1 year in seconds
+        secret,           // your random secret
+        '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63', // Public Resolver
+        resolverData,     // optional resolver calls
+        false,            // set as primary name?
+        0,                // Name Wrapper fuses
+      ],
+    })
+    ```
+  </Step>
+  <Step title="Submit the commitment">
+    Send the commitment on-chain. This transaction sets the clock for the minimum wait period.
+
+    ```solidity
+    ETHRegistrarController.commit(bytes32 commitment)
+    ```
+
+    ```typescript
+    await walletClient.writeContract({
+      address: '0x253553366Da8546fC250F225fe3d25d0C782303b',
+      abi: controllerAbi,
+      functionName: 'commit',
+      args: [commitment],
+    })
+    ```
+  </Step>
+  <Step title="Wait at least 60 seconds">
+    The contract enforces `MIN_COMMITMENT_AGE` (60 seconds). If you call `register` too early, the transaction will revert. The commitment also expires after `MAX_COMMITMENT_AGE` (24 hours), so don't wait too long.
+  </Step>
+  <Step title="Register the name">
+    Call `register` with the same parameters you used in `makeCommitment`. Send at least `rentPrice + 5% slippage` in ETH — excess is refunded.
+
+    ```solidity
+    ETHRegistrarController.register(
+      string name,
+      address owner,
+      uint256 duration,
+      bytes32 secret,
+      address resolver,
+      bytes[] data,
+      bool reverseRecord,
+      uint16 ownerControlledFuses
+    ) payable
+    ```
+
+    ```typescript
+    await walletClient.writeContract({
+      address: '0x253553366Da8546fC250F225fe3d25d0C782303b',
+      abi: controllerAbi,
+      functionName: 'register',
+      args: [
+        'alice',
+        ownerAddress,
+        31536000n,
+        secret,           // same secret as commit step
+        '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63',
+        resolverData,
+        false,
+        0,
+      ],
+      value: (totalPrice * 105n) / 100n, // +5% slippage buffer
+    })
+    ```
+  </Step>
+</Steps>
+
+## Renewing a Name
+
+Anyone — not just the owner — can renew a name. This lets you build renewal services or ensure a name you depend on doesn't expire.
+
+```solidity
+ETHRegistrarController.renew(string name, uint256 duration) payable
+```
+
+```typescript
+const [base] = await client.readContract({
+  address: '0x253553366Da8546fC250F225fe3d25d0C782303b',
+  abi: controllerAbi,
+  functionName: 'rentPrice',
+  args: ['alice', 31536000n],
+})
+
+await walletClient.writeContract({
+  address: '0x253553366Da8546fC250F225fe3d25d0C782303b',
+  abi: controllerAbi,
+  functionName: 'renew',
+  args: ['alice', 31536000n],
+  value: (base * 105n) / 100n,
+})
+```
+
+## BaseRegistrar Functions
+
+The BaseRegistrar manages the ERC-721 NFTs that represent `.eth` name ownership.
+
+<Tabs>
+  <Tab title="Read">
+    ```solidity
+    // Unix timestamp when the name expires
+    BaseRegistrar.nameExpires(uint256 tokenId) view returns (uint256)
+
+    // Returns true if the name is available (no owner or past grace period)
+    BaseRegistrar.available(uint256 tokenId) view returns (bool)
+
+    // Returns the owner of the NFT token
+    BaseRegistrar.ownerOf(uint256 tokenId) view returns (address)
+
+    // Returns the approved operator for a specific token
+    BaseRegistrar.getApproved(uint256 tokenId) view returns (address)
+
+    // Returns whether an operator is approved for all tokens
+    BaseRegistrar.isApprovedForAll(address owner, address operator) view returns (bool)
+    ```
+  </Tab>
+  <Tab title="Write">
+    ```solidity
+    // Transfer the name NFT to another address
+    BaseRegistrar.transferFrom(address from, address to, uint256 tokenId)
+    BaseRegistrar.safeTransferFrom(address from, address to, uint256 tokenId)
+
+    // Approve an operator for a specific token
+    BaseRegistrar.approve(address to, uint256 tokenId)
+
+    // Approve/revoke an operator for all your tokens
+    BaseRegistrar.setApprovalForAll(address operator, bool approved)
+
+    // Sync NFT ownership back to the ENS registry
+    // Call this after transferring the ERC-721 token directly
+    BaseRegistrar.reclaim(uint256 tokenId, address owner)
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  If you transfer a `.eth` NFT using `transferFrom`, you must also call `reclaim` to update the ENS Registry. Without this step, the old owner still controls the name in the registry even though they no longer hold the NFT.
+</Warning>
+
+## Events
+
+```solidity
+// BaseRegistrar
+event NameRegistered(uint256 indexed id, address indexed owner, uint256 expires)
+event NameRenewed(uint256 indexed id, uint256 expires)
+event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)
+
+// ETHRegistrarController
+event NameRegistered(string name, bytes32 indexed label, address indexed owner, uint256 cost, uint256 expires)
+event NameRenewed(string name, bytes32 indexed label, uint256 cost, uint256 expires)
+```
+
+## Constants
+
+```solidity
+ETHRegistrarController.MIN_COMMITMENT_AGE   // 60 seconds
+ETHRegistrarController.MAX_COMMITMENT_AGE   // 86400 seconds (24 hours)
+ETHRegistrarController.MIN_REGISTRATION_DURATION // 28 days
+```

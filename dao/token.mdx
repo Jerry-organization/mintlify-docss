@@ -1,0 +1,98 @@
+---
+title: "$ENS Token: Governance Power for ENS DAO"
+sidebarTitle: "Token"
+description: "Learn about the $ENS governance token — its supply, distribution, how to activate your voting power through delegation, and where to vote."
+---
+
+The $ENS token is the governance token of the ENS DAO. Every major decision about the ENS protocol — from fee changes to registrar upgrades to treasury allocation — is decided by $ENS token holders through on-chain voting. Holding $ENS gives you a stake in ENS governance, but you must delegate your tokens before your voting power becomes active.
+
+<Warning>
+  The ENS airdrop occurred in **November 2021** for anyone who held an ENS name on October 31, 2021. **There are no plans for another airdrop.** Be skeptical of any announcements claiming a new ENS airdrop — these are very likely fraudulent.
+</Warning>
+
+## Token Overview
+
+| Property | Value |
+|----------|-------|
+| **Token standard** | ERC-20 |
+| **Total supply** | 100,000,000 $ENS |
+| **Network** | Ethereum Mainnet |
+| **Contract address** | [`0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72`](https://etherscan.io/address/0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72) |
+| **ENS name** | [token.ensdao.eth](https://etherscan.io/address/token.ensdao.eth) |
+
+## Token Distribution
+
+At the genesis airdrop in November 2021, the 100 million $ENS supply was allocated across three groups:
+
+| Allocation | Share | Amount |
+|------------|-------|--------|
+| Past ENS users (airdrop) | 25% | 25,000,000 $ENS |
+| Contributors (team, advisors, key contributors) | 25% | 25,000,000 $ENS |
+| DAO treasury | 50% | 50,000,000 $ENS |
+
+The DAO treasury's 50 million $ENS is controlled entirely by governance — it can only be spent via passed proposals and is the primary resource for funding ENS development, working groups, and public goods grants.
+
+## Activating Your Voting Power
+
+Holding $ENS is not enough to participate in governance — you must **delegate** your tokens first. Delegation registers your voting power with a specific address. Until you delegate, your $ENS balance has no weight in any vote.
+
+You can delegate to yourself (to vote directly) or to another community member (to let them vote on your behalf). Delegation does not transfer or lock your tokens — you retain full ownership and can redelegate or transfer at any time.
+
+<Note>
+  Your voting power for any given proposal is calculated from your delegated $ENS balance at the **snapshot block** — the block number recorded when the proposal was created. Changes to your delegation after that block will not affect your weight on that proposal.
+</Note>
+
+### How to Delegate
+
+<Steps>
+  <Step title="Go to the ENS App or a governance portal">
+    Navigate to [app.ens.domains](https://app.ens.domains) or [app.anticapture.com/ens](https://app.anticapture.com/ens) and connect your wallet.
+  </Step>
+  <Step title="Find the delegation section">
+    On the ENS app, look for the governance or delegation panel. On Anticapture, select "Delegate" from the governance dashboard.
+  </Step>
+  <Step title="Choose your delegatee">
+    Enter the address you want to delegate to. To vote yourself, enter your own wallet address. To delegate to a community member, search for active delegates and review their voting history and stated positions.
+  </Step>
+  <Step title="Confirm the transaction">
+    Submit the delegation transaction. This calls the `delegate(address delegatee)` function on the $ENS token contract. Pay the required gas fee and confirm in your wallet.
+  </Step>
+  <Step title="Verify your delegation">
+    After the transaction confirms, your delegated voting power will appear on the governance portal. You are now ready to vote on active proposals.
+  </Step>
+</Steps>
+
+<Tip>
+  If you hold $ENS but don't have time to follow governance closely, delegate to an active community delegate whose values align with yours. You can review delegates' voting records and written rationales on [Anticapture](https://app.anticapture.com/ens) before choosing.
+</Tip>
+
+## Where to Vote
+
+Once your tokens are delegated, you can vote on proposals across these platforms:
+
+<CardGroup cols={2}>
+  <Card title="Anticapture" icon="landmark" href="https://app.anticapture.com/ens">
+    The primary portal for on-chain executable proposals and token delegation. View active proposals, cast votes, and track governance health metrics.
+  </Card>
+  <Card title="Snapshot (vote.ensdao.org)" icon="ballot-check" href="https://vote.ensdao.org">
+    Off-chain voting for temperature checks and social proposals. No gas required to vote — signatures are used instead of on-chain transactions.
+  </Card>
+  <Card title="ENS App" icon="globe" href="https://app.ens.domains">
+    Delegate your $ENS voting power directly from the ENS app alongside managing your names.
+  </Card>
+  <Card title="Governance Forum" icon="comments" href="https://discuss.ens.domains">
+    Discuss active proposals and share your perspective before votes go live. Informed voting starts with reading the forum.
+  </Card>
+</CardGroup>
+
+## Recovering Accidentally Sent Tokens
+
+If you accidentally sent $ENS tokens to the wrong address, your recovery options depend on where the tokens went:
+
+- **Sent to `token.ensdao.eth` or `wallet.ensdao.eth`** — Recovery may be possible. Contact the [Meta-Governance working group](https://discuss.ens.domains/c/meta-governance/28) and explain your situation.
+- **Sent to the null address (`0x000...0000`) or a mistyped address** — The tokens are permanently unrecoverable. No one can retrieve them.
+- **Sent to an exchange or third-party wallet** — Contact that exchange or third party directly for assistance.
+
+<Warning>
+  Always double-check the recipient address before sending $ENS. Blockchain transactions are irreversible, and most misdirected transfers cannot be recovered.
+</Warning>

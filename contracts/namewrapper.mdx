@@ -1,0 +1,289 @@
+---
+title: "Name Wrapper: Wrap ENS Names as ERC-1155 NFTs"
+sidebarTitle: "Name Wrapper"
+description: "Wrap any ENS name into an ERC-1155 NFT, burn fuses to restrict permissions, and issue trustless subnames with the Name Wrapper contract."
+---
+
+The Name Wrapper contract lets you wrap any ENS name — `.eth` second-level names, subnames, and DNS names — into an ERC-1155 NFT. Before the Name Wrapper, only `.eth` 2LDs had an NFT representation (ERC-721). Now every wrapped name gets its own NFT, together with a fuse and permission system that lets you delegate and permanently restrict control over any name you own.
+
+**Mainnet contract address:** `0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401`
+
+## Wrapped Name States
+
+When you wrap a name, it moves through a progression of states. Each state determines what the parent can do to the name and what fuses can be burned on it.
+
+<Tabs>
+  <Tab title="Wrapped">
+    The Name Wrapper contract holds ownership of the name in the registry (or registrar for `.eth` 2LDs), and you receive an ERC-1155 NFT in return.
+
+    In this state:
+    - You can unwrap the name at any time, which burns the ERC-1155 NFT and returns registry ownership to you.
+    - The **parent owner** can still replace or delete the name in the registry, and can burn parent-controlled fuses on it.
+    - No owner-controlled fuses can be burned yet.
+
+    All wrapped `.eth` 2LDs skip directly to **Emancipated** when they are wrapped, because the `eth` node is already locked.
+  </Tab>
+  <Tab title="Emancipated">
+    The `PARENT_CANNOT_CONTROL` fuse has been burned. The parent can no longer replace, delete, or burn additional fuses on the name. The name also acquires its own **expiry**, which is independent of any parent renewal.
+
+    In this state:
+    - You can still unwrap and re-wrap the name freely.
+    - The name expires at its own expiry date (not the parent's).
+    - Owner-controlled fuses still cannot be burned until the name is also **Locked**.
+
+    All `.eth` 2LDs are automatically placed in the Emancipated state when wrapped.
+  </Tab>
+  <Tab title="Locked">
+    The `CANNOT_UNWRAP` fuse has been burned on top of `PARENT_CANNOT_CONTROL`. The name is permanently locked inside the wrapper for the lifetime of the current registration.
+
+    In this state:
+    - The name **cannot** be unwrapped.
+    - You can burn any owner-controlled fuses on the name.
+    - Subnames of this name can have their own fuses burned.
+
+    Locking is required before you can impose any restrictions (such as `CANNOT_TRANSFER`) on the name or its subnames.
+  </Tab>
+</Tabs>
+
+<Note>
+  When a Locked or Emancipated name reaches its expiry, it loses all burned fuses and reverts to the **Wrapped** state. For `.eth` 2LDs, the expiry is the `.eth` Registrar expiry plus the 90-day grace period.
+</Note>
+
+## Key Functions
+
+### Wrapping Names
+
+**Wrap a `.eth` 2LD** — Use `wrapETH2LD` to wrap a `.eth` second-level name. You must first approve the Name Wrapper as an operator on the BaseRegistrar.
+
+```solidity
+function wrapETH2LD(
+    string calldata label,
+    address wrappedOwner,
+    uint16 ownerControlledFuses,
+    address resolver
+) external returns (uint64 expiry)
+```
+
+**Wrap any other ENS name** — Use `wrap` for subnames and DNS names. The caller must own the name in the ENS Registry.
+
+```solidity
+function wrap(
+    bytes calldata name,
+    address wrappedOwner,
+    address resolver
+) external
+```
+
+**Unwrap a name** — Burns the ERC-1155 NFT and returns registry ownership to `controller`. Reverts if `CANNOT_UNWRAP` is burned.
+
+```solidity
+function unwrap(
+    bytes32 parentNode,
+    bytes32 labelhash,
+    address controller
+) external
+```
+
+### Managing Fuses
+
+**Burn owner-controlled fuses on your own name** — Only works if the name is Locked (i.e. `CANNOT_UNWRAP` is already set).
+
+```solidity
+function setFuses(
+    bytes32 node,
+    uint16 ownerControlledFuses
+) external returns (uint32 newFuses)
+```
+
+**Burn fuses on a child name you own** — You must own the parent, and the parent must be Locked before you can burn any owner-controlled fuses on the child.
+
+```solidity
+function setChildFuses(
+    bytes32 parentNode,
+    bytes32 labelhash,
+    uint32 fuses,
+    uint64 expiry
+) external
+```
+
+### Creating Subnames
+
+**Create a wrapped subname in a single call** — Sets the owner, resolver, TTL, fuses, and expiry all at once.
+
+```solidity
+function setSubnodeRecord(
+    bytes32 parentNode,
+    string calldata label,
+    address owner,
+    address resolver,
+    uint64 ttl,
+    uint32 fuses,
+    uint64 expiry
+) external returns (bytes32 node)
+```
+
+## Fuse System
+
+Fuses are one-way permission switches. Once a fuse is burned, it cannot be unburned until the name expires. There are two categories: **parent-controlled fuses** (set by the parent owner) and **owner-controlled fuses** (set by the name's owner or its parent).
+
+<AccordionGroup>
+  <Accordion title="Parent-Controlled Fuses">
+    Only the owner of the **parent** name can burn these. Think of them as perks or grants given to the child name's owner.
+
+    | Fuse | Value | Description |
+    |---|---|---|
+    | `PARENT_CANNOT_CONTROL` | 1 | Emancipates the name. The parent can no longer replace, delete, or burn further fuses on it. Required before any owner-controlled fuses can be burned. |
+    | `IS_DOT_ETH` | 2 | Marks the name as a `.eth` 2LD. Set automatically by the wrapper; cannot be burned by users. |
+    | `CAN_EXTEND_EXPIRY` | 4 | Allows the wrapped owner (or an approved operator) to extend their own expiry. Without this, only the parent can extend a subname's expiry. |
+
+    There are 13 additional unreserved parent-controlled fuse bits you can use for any custom on-chain roles or permissions.
+  </Accordion>
+  <Accordion title="Owner-Controlled Fuses">
+    Either the **name's owner** or the **parent owner** can burn these. Think of them as restrictions that permanently remove capabilities from the name.
+
+    | Fuse | Value | Description |
+    |---|---|---|
+    | `CANNOT_UNWRAP` | 1 | Locks the name permanently in the wrapper. Must be burned before any other owner-controlled fuses can be set. |
+    | `CANNOT_BURN_FUSES` | 2 | Prevents any further fuses from being burned on the name. |
+    | `CANNOT_TRANSFER` | 4 | Makes the ERC-1155 NFT non-transferrable (soulbound). |
+    | `CANNOT_SET_RESOLVER` | 8 | Prevents the resolver from being changed. |
+    | `CANNOT_SET_TTL` | 16 | Prevents the TTL from being changed. |
+    | `CANNOT_CREATE_SUBDOMAIN` | 32 | Prevents new subdomains from being created under this name. |
+    | `CANNOT_APPROVE` | 64 | Prevents updating the approved subname renewal manager. |
+
+    There are 9 additional unreserved owner-controlled fuse bits available for custom use.
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+  Fuses are **irreversible** for the lifetime of the registration. To burn any owner-controlled fuse, `CANNOT_UNWRAP` must already be set. To burn `CANNOT_UNWRAP`, `PARENT_CANNOT_CONTROL` must already be set. Plan your fuse strategy carefully before locking a name.
+</Warning>
+
+### Fuse Dependency Chain
+
+The fuse system is recursive by design:
+
+- To burn owner-controlled fuses, `CANNOT_UNWRAP` (CU) must be burned on the name.
+- To burn CU, `PARENT_CANNOT_CONTROL` (PCC) must be burned on the name.
+- Only the parent can burn PCC, and only if the parent itself is Locked (has CU burned).
+- `.eth` 2LDs bypass this requirement — PCC is burned automatically when they are wrapped, because the `eth` node is already permanently locked.
+
+## Expiry
+
+Every wrapped name with burned fuses has an expiry timestamp. The expiry determines how long the burned fuses are active, and for Emancipated or Locked names, it also determines when the name itself expires.
+
+<Tabs>
+  <Tab title=".eth 2LDs">
+    The expiry inside the Name Wrapper mirrors the **end of the 90-day grace period** from the `.eth` Registrar — not the raw expiration date itself.
+
+    - When you renew a `.eth` 2LD, the Name Wrapper expiry is updated automatically.
+    - During the grace period, the name is restricted: you cannot unwrap or update it until it is renewed.
+    - Once the grace period ends (the Name Wrapper expiry is reached), a Locked or Emancipated name loses its fuses and the owner loses control.
+  </Tab>
+  <Tab title="Subnames">
+    The parent sets the expiry when creating or updating a subname. The expiry:
+
+    - Can only be **increased**, never decreased.
+    - Cannot exceed the parent name's own expiry.
+    - Is not automatically extended when the parent renews — you must extend subname expiries explicitly.
+
+    If the parent burns `CAN_EXTEND_EXPIRY` on a subname, the subname owner can extend their own expiry up to the parent's expiry at any time.
+  </Tab>
+</Tabs>
+
+<Tip>
+  To allow subname owners to self-renew indefinitely, burn `CAN_EXTEND_EXPIRY` on the subname at issuance. Pair it with `CANNOT_APPROVE` on your parent name to permanently lock in a renewal manager contract, giving subname owners an "unruggable renewal" guarantee.
+</Tip>
+
+## Wrapping a .eth 2LD: Code Example
+
+<Steps>
+  <Step title="Approve the Name Wrapper on the BaseRegistrar">
+    The Name Wrapper must be authorised to manage your `.eth` name before you can wrap it.
+
+    ```solidity
+    baseRegistrar.setApprovalForAll(nameWrapperAddress, true);
+    ```
+  </Step>
+  <Step title="Wrap your .eth 2LD">
+    Call `wrapETH2LD` with the label (without `.eth`), the recipient address, any initial fuses, and a resolver.
+
+    ```solidity
+    // Approve the Name Wrapper to manage your name first
+    baseRegistrar.setApprovalForAll(nameWrapperAddress, true);
+
+    // Wrap your .eth 2LD
+    nameWrapper.wrapETH2LD(
+        "alice",           // label (without .eth)
+        msg.sender,        // wrapped owner
+        0,                 // no fuses burned initially
+        resolverAddress    // resolver address
+    );
+    ```
+
+    After this call, `alice.eth` is Emancipated (PCC is set automatically) and you hold an ERC-1155 token representing ownership.
+  </Step>
+  <Step title="Lock the name and burn fuses (optional)">
+    If you want to restrict the name further — for example, to issue trustless subnames — lock it by burning `CANNOT_UNWRAP`, then burn any additional owner-controlled fuses.
+
+    ```solidity
+    // CANNOT_UNWRAP = 1
+    nameWrapper.setFuses(namehash("alice.eth"), 1);
+
+    // Now you can burn additional fuses, e.g. CANNOT_TRANSFER (4)
+    nameWrapper.setFuses(namehash("alice.eth"), 4);
+    ```
+  </Step>
+</Steps>
+
+## Use Cases
+
+<CardGroup cols={1}>
+  <Card title="Trustless Subdomain Issuance" icon="shield-check">
+    Lock your parent name, then issue subnames with `PARENT_CANNOT_CONTROL` burned. Subname owners get an on-chain guarantee that you cannot replace or revoke their name before expiry. Add `CANNOT_UNWRAP` to the subname to allow burning further owner-controlled restrictions.
+
+    ```solidity
+    // Fuse bitmask: PARENT_CANNOT_CONTROL (1) | CANNOT_UNWRAP (1 in owner bits)
+    nameWrapper.setSubnodeRecord(
+        parentNode,
+        "bob",
+        bobAddress,
+        resolverAddress,
+        0,               // TTL
+        PARENT_CANNOT_CONTROL | CANNOT_UNWRAP,
+        expiry
+    );
+    ```
+  </Card>
+  <Card title="Time-Locked Name Restrictions" icon="clock">
+    Burn `CANNOT_TRANSFER`, `CANNOT_SET_RESOLVER`, or other owner-controlled fuses together with a specific expiry. The restrictions automatically lift when the expiry is reached, without any additional transaction.
+  </Card>
+  <Card title="Permanent Ownership Grants" icon="infinity">
+    Emancipate a subname with `PARENT_CANNOT_CONTROL`, lock it with `CANNOT_UNWRAP`, and burn `CAN_EXTEND_EXPIRY`. The recipient owns the subname for as long as they choose to renew it, with no ability for you to interfere.
+  </Card>
+  <Card title="Soulbound Event Tickets" icon="ticket">
+    Issue subnames for event attendees with `PARENT_CANNOT_CONTROL | CANNOT_UNWRAP | CANNOT_TRANSFER` burned. The resulting NFT is permanently bound to the recipient's address and cannot be sold or transferred.
+  </Card>
+</CardGroup>
+
+## Events
+
+```solidity
+// Emitted when a name is wrapped
+event NameWrapped(
+    bytes32 indexed node,
+    bytes name,
+    address owner,
+    uint32 fuses,
+    uint64 expiry
+)
+
+// Emitted when a name is unwrapped
+event NameUnwrapped(bytes32 indexed node, address owner)
+
+// Emitted when fuses are burned on a name
+event FusesSet(bytes32 indexed node, uint32 fuses)
+
+// Emitted when a name's expiry is updated
+event ExpiryExtended(bytes32 indexed node, uint64 expiry)
+```

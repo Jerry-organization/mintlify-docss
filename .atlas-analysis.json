@@ -1,0 +1,100 @@
+{
+  "projectType": "saas",
+  "projectName": "ENS",
+  "projectDescription": "The Ethereum Name Service (ENS) is a decentralized naming protocol on Ethereum that maps human-readable names like alice.eth to blockchain addresses, content hashes, and arbitrary metadata.",
+  "theme": "luma",
+  "primaryColor": "#0484bc",
+  "lightColor": "#61afd3",
+  "darkColor": "#ebf0f2",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "terminology",
+              "faq"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/protocol",
+              "concepts/resolution",
+              "concepts/dns-names",
+              "concepts/layer2",
+              "concepts/deployments"
+            ]
+          },
+          {
+            "group": "Integration Guides",
+            "pages": [
+              "guides/records",
+              "guides/avatars",
+              "guides/primary-names",
+              "guides/subdomains",
+              "guides/multichain",
+              "guides/sign-in-with-ethereum",
+              "guides/subgraph"
+            ]
+          },
+          {
+            "group": "Smart Contracts",
+            "pages": [
+              "contracts/overview",
+              "contracts/registry",
+              "contracts/eth-registrar",
+              "contracts/dns-registrar",
+              "contracts/reverse-registrar",
+              "contracts/resolvers",
+              "contracts/namewrapper",
+              "contracts/ensv2"
+            ]
+          },
+          {
+            "group": "Governance",
+            "pages": [
+              "dao/overview",
+              "dao/constitution",
+              "dao/token",
+              "dao/proposals",
+              "dao/improvement-proposals"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Human-readable .eth names mapped to Ethereum addresses and other blockchain addresses",
+    "DNS name integration via DNSSEC — import existing DNS names into ENS",
+    "Decentralized Web (dWeb) content hosting via IPFS/IPNS/Swarm content hashes",
+    "Primary names (reverse resolution) — map an Ethereum address back to an ENS name",
+    "Text records — attach arbitrary metadata (Twitter, GitHub, email, URL) to any ENS name",
+    "Multichain address records — store addresses for 100+ blockchains on one ENS name",
+    "Subdomains — create hierarchical names and build custom subname registrars",
+    "Name Wrapper — wrap ENS names as ERC-1155 NFTs with fine-grained permission fuses",
+    "CCIP-Read (EIP-3668) — trustless off-chain and L2 name resolution",
+    "ENSv2 — next-generation protocol with native L2 support and hierarchical registries",
+    "Sign-In with Ethereum (SIWE) — ENS-powered decentralized authentication",
+    "ENS DAO governance — $ENS token voting on protocol upgrades and treasury",
+    "ENS Improvement Proposals (ENSIPs) — community-driven standards process"
+  ],
+  "publicApiSurface": [
+    "ENS Registry — owner(), resolver(), ttl(), setOwner(), setResolver(), setTTL(), setSubnodeOwner(), setSubnodeRecord()",
+    "ETH Registrar — available(), rentPrice(), register(), renew(), reclaim()",
+    "Public Resolver — addr(), setAddr(), text(), setText(), contenthash(), setContenthash(), pubkey(), setPubkey()",
+    "Universal Resolver — resolve(), findResolver()",
+    "Reverse Registrar — setName(), setNameForAddr()",
+    "Name Wrapper — wrapETH2LD(), wrap(), unwrap(), setFuses(), setChildFuses(), setSubnodeRecord()",
+    "DNS Registrar — proveAndClaim(), proveAndClaimWithResolver()",
+    "wagmi hooks — useEnsName(), useEnsAvatar(), useEnsAddress(), useEnsResolver(), useEnsText()",
+    "ensjs library — getName(), getAddress(), getTextRecord(), getContentHashRecord(), getResolver()",
+    "CCIP-Read / EIP-3668 — offchain data gateway callback interface",
+    "Subgraph — GraphQL queries for domains, registrations, resolvers, accounts"
+  ]
+}

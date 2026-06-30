@@ -1,0 +1,291 @@
+---
+title: "ENS Primary Names: Address-to-Name Resolution"
+sidebarTitle: "Primary Names"
+description: "Learn how to set and resolve ENS primary names, verify forward resolution, and display human-readable names instead of hex addresses in your app."
+---
+
+A **primary name** replaces a hex address with a human-readable ENS name anywhere your app displays wallet identities. Instead of showing `0xb8c2...67d5`, you show `nick.eth`. The feature rests on a bi-directional relationship:
+
+1. **Forward resolution** — the name resolves to the address (`nick.eth` → `0xb8c2…67d5`).
+2. **Reverse resolution** — the address maps back to the name (`0xb8c2…67d5` → `nick.eth`).
+
+Both directions must agree before a primary name is considered valid. This two-way check prevents anyone from claiming a name that doesn't belong to their address.
+
+<Note>
+  Primary names are now supported on Ethereum Mainnet **and** popular L2s including Base, OP Mainnet, Arbitrum One, Scroll, and Linea. Users can set a chain-specific primary name on their preferred network without touching L1.
+</Note>
+
+---
+
+## Reading a Primary Name
+
+Pass the user's address to `getEnsName` (viem) or `useEnsName` (wagmi). Most libraries automatically verify forward resolution and return `null` if the check fails.
+
+<Tabs>
+  <Tab title="wagmi">
+    ```tsx
+    import { useEnsName } from 'wagmi'
+    import { mainnet } from 'wagmi/chains'
+
+    export function DisplayName({ address }: { address: `0x${string}` }) {
+      const { data: name } = useEnsName({
+        address,
+        chainId: mainnet.id, // ENS resolution always starts from L1
+      })
+
+      return <span>{name ?? address}</span>
+    }
+    ```
+  </Tab>
+  <Tab title="viem">
+    ```ts
+    import { createPublicClient, http } from 'viem'
+    import { mainnet } from 'viem/chains'
+
+    const client = createPublicClient({
+      chain: mainnet,
+      transport: http(),
+    })
+
+    const name = await client.getEnsName({
+      address: '0xb8c2C29ee19D8307cb7255e1Cd9CbDE883A267d5',
+    })
+
+    console.log(name) // 'nick.eth' or null
+    ```
+  </Tab>
+  <Tab title="ethers v5">
+    ```ts
+    import { ethers } from 'ethers'
+
+    const provider = new ethers.providers.JsonRpcProvider()
+    const address = '0xb8c2C29ee19D8307cb7255e1Cd9CbDE883A267d5'
+
+    const name = await provider.lookupAddress(address)
+    console.log(name) // 'nick.eth' or null (ethers verifies forward resolution)
+    ```
+  </Tab>
+</Tabs>
+
+### Resolving L2 Primary Names
+
+wagmi and viem support chain-specific primary names. Pass `coinType` to specify which chain's reverse record you want to resolve:
+
+```tsx
+import { toCoinType } from 'viem'
+import { useEnsName } from 'wagmi'
+import { base, mainnet } from 'wagmi/chains'
+
+export function BaseName({ address }: { address: `0x${string}` }) {
+  const { data: name } = useEnsName({
+    address,
+    chainId: mainnet.id,        // resolution always queries L1
+    coinType: toCoinType(base.id), // but looks up the Base-specific reverse record
+  })
+
+  return <span>{name ?? address}</span>
+}
+```
+
+<Note>
+  Even when resolving an L2 primary name, `chainId` must be `mainnet.id`. ENS resolution always originates from Ethereum Mainnet and branches out from there.
+</Note>
+
+---
+
+## The Forward Verification Pattern
+
+Always verify that the resolved name actually points back to the original address before displaying it. This prevents a misconfigured or malicious name from appearing in your UI.
+
+```ts
+import { createPublicClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+import { normalize } from 'viem/ens'
+
+const client = createPublicClient({ chain: mainnet, transport: http() })
+
+async function getSafePrimaryName(address: `0x${string}`): Promise<string> {
+  // Step 1: reverse resolve the address to a name
+  const name = await client.getEnsName({ address })
+  if (!name) return address
+
+  // Step 2: forward resolve the name back to an address
+  const forwardAddress = await client.getEnsAddress({
+    name: normalize(name),
+  })
+
+  // Step 3: only use the name if addresses match (case-insensitive)
+  if (forwardAddress?.toLowerCase() === address.toLowerCase()) {
+    return name
+  }
+
+  // Verification failed — fall back to the raw address
+  return address
+}
+```
+
+<Warning>
+  Never skip forward verification. If a name's forward address record is removed or changed after a reverse record was set, the primary name is stale. Displaying it without verification could mislead users about who controls an address.
+</Warning>
+
+Most high-level libraries (wagmi, viem's `getEnsName`, ethers' `lookupAddress`) perform this verification automatically and return `null` on failure.
+
+---
+
+## Setting a Primary Name
+
+Setting a primary name is a two-step process. Both steps must be completed for the primary name to resolve correctly.
+
+<Steps>
+  <Step title="Set the forward address record">
+    Make sure your ENS name resolves to your address. For L1:
+
+    ```ts
+    import { createWalletClient, http } from 'viem'
+    import { mainnet } from 'viem/chains'
+    import { namehash, normalize } from 'viem/ens'
+
+    const walletClient = createWalletClient({ chain: mainnet, transport: http() })
+
+    await walletClient.writeContract({
+      address: '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63', // Public Resolver
+      abi: [
+        {
+          name: 'setAddr',
+          type: 'function',
+          inputs: [
+            { name: 'node', type: 'bytes32' },
+            { name: 'addr', type: 'address' },
+          ],
+        },
+      ],
+      functionName: 'setAddr',
+      args: [namehash(normalize('alice.eth')), '0xYourAddress'],
+    })
+    ```
+
+    For an L2 chain (e.g., Base), set the address using the chain-specific coin type:
+
+    ```ts
+    import { toCoinType } from 'viem'
+    import { base } from 'viem/chains'
+
+    const baseCoinType = toCoinType(base.id) // 2147492648
+
+    await walletClient.writeContract({
+      address: '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63',
+      abi: [
+        {
+          name: 'setAddr',
+          type: 'function',
+          inputs: [
+            { name: 'node', type: 'bytes32' },
+            { name: 'coinType', type: 'uint256' },
+            { name: 'a', type: 'bytes' },
+          ],
+        },
+      ],
+      functionName: 'setAddr',
+      args: [namehash(normalize('alice.eth')), BigInt(baseCoinType), '0xYourAddress'],
+    })
+    ```
+  </Step>
+  <Step title="Set the reverse record">
+    Call `setName` on the appropriate Reverse Registrar contract to map your address back to the name.
+
+    **L1 (Ethereum Mainnet):**
+    ```ts
+    const L1_REVERSE_REGISTRAR = '0xa58E81fe9b61B5c3fE2AFD33CF304c454AbFc7Cb'
+
+    await walletClient.writeContract({
+      address: L1_REVERSE_REGISTRAR,
+      abi: [
+        {
+          name: 'setName',
+          type: 'function',
+          inputs: [{ name: 'name', type: 'string' }],
+        },
+      ],
+      functionName: 'setName',
+      args: ['alice.eth'],
+    })
+    ```
+
+    The simplest approach is to use [app.ens.domains](https://app.ens.domains), which handles both steps in one flow, including L2 support.
+  </Step>
+</Steps>
+
+---
+
+## Primary Names for Smart Contracts
+
+Smart contracts can also have primary names. Because a contract cannot sign transactions directly, the Reverse Registrar exposes `setNameForAddr`:
+
+```solidity
+// Called by the contract owner or a designated controller
+reverseRegistrar.setNameForAddr(
+    contractAddress,   // the contract to name
+    owner,             // the address that authorized this call
+    resolver,          // the resolver to use
+    "myprotocol.eth"   // the name to set
+);
+```
+
+For this to work, your contract must implement a `owner()` function that returns the caller's address, or you must provide a valid authorization signature.
+
+<Tip>
+  See the [Reverse Registrar documentation](https://docs.ens.domains/registry/reverse) for the full `setNameForAddr` interface and authorization requirements.
+</Tip>
+
+---
+
+## L2 Primary Names: How Verification Works
+
+Each L2 has its own Reverse Registrar deployed on that chain. When verifying an L2 primary name, ENS checks that:
+
+1. The reverse record on the **L2 Reverse Registrar** points to the name.
+2. The name's address record for **that specific L2 coin type** matches the address.
+
+For example, to have a valid Base primary name:
+- `setName("alice.eth")` on the **Base Reverse Registrar**.
+- `setAddr(node, toCoinType(base.id), address)` on the resolver for `alice.eth` (called on L1).
+
+If you set only the default EVM address (coin type 60) and the default reverse record (on the L1 Default Reverse Registrar), your primary name works as a universal fallback for all chains.
+
+<Note>
+  The propagation delay for L2 primary names can be up to 6 hours in production implementations due to cross-chain data availability windows.
+</Note>
+
+---
+
+## Displaying Primary Names in Your App
+
+Once you have a verified primary name, use it everywhere you previously showed addresses:
+
+```tsx
+import { useEnsAvatar, useEnsName } from 'wagmi'
+import { mainnet } from 'wagmi/chains'
+import { normalize } from 'viem/ens'
+
+export function UserBadge({ address }: { address: `0x${string}` }) {
+  const { data: name } = useEnsName({ address, chainId: mainnet.id })
+  const { data: avatar } = useEnsAvatar({
+    name: name ? normalize(name) : undefined,
+    chainId: mainnet.id,
+    query: { enabled: !!name },
+  })
+
+  const displayName = name ?? `${address.slice(0, 6)}…${address.slice(-4)}`
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <img
+        src={avatar ?? `https://avatars.jakerunzer.com/${address}`}
+        alt={displayName}
+        style={{ width: 32, height: 32, borderRadius: '50%' }}
+      />
+      <span>{displayName}</span>
+    </div>
+  )
+}
+```

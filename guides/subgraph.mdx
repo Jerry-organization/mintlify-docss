@@ -1,0 +1,362 @@
+---
+title: "Querying ENS Data with The Graph Subgraph"
+sidebarTitle: "Subgraph"
+description: "Learn how to query ENS name ownership, registration history, and resolver data using The Graph's ENS subgraph and GraphQL API."
+---
+
+The ENS Subgraph, built on [The Graph](https://thegraph.com/) protocol, provides fast, indexed access to ENS onchain data. Instead of scanning the blockchain yourself, you send GraphQL queries to the subgraph and get back structured results instantly.
+
+The subgraph indexes second-level `.eth` names and DNS-imported names. It is the recommended way to answer questions like "which names does this address own?" or "what were the most recent registrations?" — queries that are impractical to answer through direct contract reads alone.
+
+<Note>
+  The subgraph does **not** index offchain or gasless names (names stored in CCIP-Read gateways). For a complete picture of all names an address controls, combine subgraph results with offchain provider APIs. See the [listing names](https://docs.ens.domains/web/enumerate) guide for more detail.
+</Note>
+
+---
+
+## Endpoints
+
+| Network | Endpoint |
+|---|---|
+| **Mainnet** | `https://gateway.thegraph.com/api/[api-key]/subgraphs/id/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH` |
+| **Sepolia** | `https://api.studio.thegraph.com/query/49574/enssepolia/version/latest` |
+| **Holesky** | `https://api.studio.thegraph.com/query/49574/ensholesky/version/latest` |
+
+Replace `[api-key]` with your API key from [The Graph Studio](https://thegraph.com/studio/apikeys/).
+
+<Warning>
+  The rate-limited endpoints above are suitable for development and testing. For production applications, [register for a free API key](https://thegraph.com/studio/apikeys/) to avoid rate limiting.
+</Warning>
+
+---
+
+## Key Entities
+
+The ENS subgraph schema defines the following core entities. Explore the full schema at [/schema.graphql](https://github.com/ensdomains/ens-subgraph/blob/master/schema.graphql).
+
+| Entity | Description |
+|---|---|
+| `Domain` | An ENS name (any level) — includes the name, owner, resolver, parent, and subdomains |
+| `Registration` | A `.eth` second-level name registration — includes registrant, registration date, and expiry |
+| `Resolver` | A resolver contract assignment — includes text records and coin types stored |
+| `Account` | An Ethereum address that owns or manages ENS names |
+
+### Terminology Note
+
+The subgraph uses older terminology from ENS v1:
+
+- **`registrant`** = the name's **owner** (holds the NFT; same as `ownerOf()` on the Base Registrar)
+- **`controller`** = the name's **manager** (can set records; same as `owner()` on the ENS Registry)
+
+---
+
+## Example Queries
+
+You can run these queries interactively in the [Graph Explorer Playground](https://thegraph.com/explorer/subgraphs/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH?view=Playground&chain=arbitrum-one).
+
+### Get All Names Owned by an Address
+
+Use lowercase addresses in subgraph queries.
+
+```graphql
+query GetDomainsForAccount {
+  domains(where: { owner: "0xa508c16666c5b8981fa46eb32784fccc01942a71" }) {
+    name
+    createdAt
+    resolver {
+      address
+    }
+  }
+}
+```
+
+### Get the Most Recently Expiring Registration for an Address
+
+```graphql
+query GetTopDomainForAccount {
+  account(id: "0xa508c16666c5b8981fa46eb32784fccc01942a71") {
+    registrations(first: 1, orderBy: expiryDate, orderDirection: desc) {
+      domain {
+        name
+      }
+      expiryDate
+    }
+    id
+  }
+}
+```
+
+**Example response:**
+
+```json
+{
+  "data": {
+    "account": {
+      "registrations": [
+        {
+          "domain": { "name": "datanexus.eth" },
+          "expiryDate": "1714752524"
+        }
+      ],
+      "id": "0xa508c16666c5b8981fa46eb32784fccc01942a71"
+    }
+  }
+}
+```
+
+### Get the Expiry Date for a Specific Name
+
+```graphql
+query GetDomainExpiry($name: String = "alice.eth") {
+  registrations(
+    where: { domain_: { name: $name } }
+    first: 1
+    orderBy: expiryDate
+    orderDirection: desc
+  ) {
+    expiryDate
+    domain {
+      name
+    }
+    registrant {
+      id
+    }
+  }
+}
+```
+
+**Example response:**
+
+```json
+{
+  "data": {
+    "registrations": [
+      {
+        "expiryDate": "1714752524",
+        "domain": { "name": "alice.eth" },
+        "registrant": { "id": "0x..." }
+      }
+    ]
+  }
+}
+```
+
+### Get Subdomains of a Name
+
+```graphql
+query GetSubdomains($name: String = "messari.eth") {
+  domains(where: { name: $name }) {
+    name
+    id
+    subdomainCount
+    subdomains(first: 10) {
+      name
+      owner {
+        id
+      }
+    }
+  }
+}
+```
+
+**Example response:**
+
+```json
+{
+  "data": {
+    "domains": [
+      {
+        "name": "messari.eth",
+        "id": "0x498ada62...",
+        "subdomainCount": 2,
+        "subdomains": [
+          { "name": "subgraphs.messari.eth", "owner": { "id": "0x..." } },
+          { "name": "bd.messari.eth", "owner": { "id": "0x..." } }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Get Recent Registrations
+
+```graphql
+query GetRecentRegistrations {
+  registrations(
+    first: 10
+    orderBy: registrationDate
+    orderDirection: desc
+  ) {
+    domain {
+      name
+      labelName
+    }
+    registrant {
+      id
+    }
+    registrationDate
+    expiryDate
+  }
+}
+```
+
+### Look Up a Name by Namehash
+
+Use the namehash (a bytes32 hex string) as the domain `id`:
+
+```graphql
+query GetDomainByNamehash {
+  domain(id: "0x787192fc5378cc32aa956ddfdedbf26b24e8d78e88a1813d5e90e6330f37836a") {
+    name
+    owner {
+      id
+    }
+    resolver {
+      texts
+      coinTypes
+    }
+    registrant {
+      id
+    }
+    createdAt
+  }
+}
+```
+
+Compute the namehash in JavaScript:
+
+```ts
+import { namehash, normalize } from 'viem/ens'
+
+const id = namehash(normalize('alice.eth'))
+console.log(id) // '0x787192fc...'
+```
+
+---
+
+## Querying from JavaScript
+
+### Using `fetch`
+
+```ts
+const SUBGRAPH_URL =
+  'https://gateway.thegraph.com/api/YOUR_API_KEY/subgraphs/id/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH'
+
+async function getNamesForAddress(address: string) {
+  const query = `
+    query GetDomainsForAccount($owner: String!) {
+      domains(where: { owner: $owner }) {
+        name
+        createdAt
+      }
+    }
+  `
+
+  const response = await fetch(SUBGRAPH_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query,
+      variables: { owner: address.toLowerCase() },
+    }),
+  })
+
+  const { data } = await response.json()
+  return data.domains as { name: string; createdAt: string }[]
+}
+
+// Usage
+const names = await getNamesForAddress('0xa508c16666c5b8981fa46eb32784fccc01942a71')
+console.log(names)
+```
+
+### Using a GraphQL Client (urql)
+
+```ts
+import { createClient, cacheExchange, fetchExchange } from '@urql/core'
+
+const client = createClient({
+  url: 'https://gateway.thegraph.com/api/YOUR_API_KEY/subgraphs/id/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH',
+  exchanges: [cacheExchange, fetchExchange],
+})
+
+const GET_DOMAINS = `
+  query GetDomainsForAccount($owner: String!) {
+    domains(where: { owner: $owner }) {
+      name
+      createdAt
+    }
+  }
+`
+
+const result = await client.query(GET_DOMAINS, {
+  owner: '0xa508c16666c5b8981fa46eb32784fccc01942a71',
+})
+
+console.log(result.data.domains)
+```
+
+---
+
+## Pagination
+
+The Graph limits results to 1,000 records per query. Use `skip` and `first` to paginate through large result sets:
+
+```graphql
+query GetAllRegistrations($skip: Int!) {
+  registrations(
+    first: 100
+    skip: $skip
+    orderBy: registrationDate
+    orderDirection: desc
+  ) {
+    domain {
+      name
+    }
+    registrationDate
+  }
+}
+```
+
+In JavaScript, loop through pages until you get fewer results than the page size:
+
+```ts
+async function getAllRegistrations() {
+  const PAGE_SIZE = 100
+  let skip = 0
+  const allRegistrations = []
+
+  while (true) {
+    const response = await fetch(SUBGRAPH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `
+          query($skip: Int!) {
+            registrations(first: ${PAGE_SIZE}, skip: $skip, orderBy: registrationDate, orderDirection: desc) {
+              domain { name }
+              registrationDate
+            }
+          }
+        `,
+        variables: { skip },
+      }),
+    })
+
+    const { data } = await response.json()
+    const page = data.registrations
+
+    allRegistrations.push(...page)
+
+    if (page.length < PAGE_SIZE) break // last page
+    skip += PAGE_SIZE
+  }
+
+  return allRegistrations
+}
+```
+
+<Tip>
+  For most ENS data needs, the [ensjs](https://github.com/ensdomains/ensjs) library wraps the subgraph and direct contract calls into a single ergonomic API. Check the [ensjs documentation](https://github.com/ensdomains/ensjs/tree/main/docs) before writing custom subgraph queries — your use case may already be covered.
+</Tip>

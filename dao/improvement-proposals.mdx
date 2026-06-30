@@ -1,0 +1,153 @@
+---
+title: "ENS Improvement Proposals (ENSIPs) Explained"
+sidebarTitle: "Improvement Proposals"
+description: "Understand what ENSIPs are, explore key proposals that define ENS standards, and learn how to submit your own ENSIP to the community."
+---
+
+ENS Improvement Proposals (ENSIPs) are the formal standard for proposing technical changes to the ENS protocol. Modeled after Ethereum's EIP process, ENSIPs cover everything from new resolver features and address formats to text record standards, normalization rules, and offchain resolution mechanisms. If you want to change how ENS works at the protocol level, an ENSIP is how you do it.
+
+## What ENSIPs Cover
+
+ENSIPs are distinct from governance proposals (which control the DAO treasury and policy). ENSIPs define the **technical standards** that the ENS ecosystem implements — the specifications that wallets, apps, and resolvers follow to interpret ENS data consistently.
+
+A single ENSIP can define:
+- A new resolver record type (e.g., text records, content hashes, avatar records)
+- A multichain address format standard
+- Protocol-level resolution behavior (e.g., wildcard resolution)
+- Name normalization and encoding rules
+- Offchain data retrieval mechanisms
+
+## ENSIP Statuses
+
+Every ENSIP moves through a defined lifecycle:
+
+| Status | Meaning |
+|--------|---------|
+| **Draft** | The ENSIP is under active development and open for feedback |
+| **Review** | The ENSIP is complete and being evaluated by the community |
+| **Final** | The ENSIP has been accepted and is considered a stable standard |
+| **Stagnant** | The ENSIP has had no activity for an extended period |
+| **Withdrawn** | The author has withdrawn the ENSIP from consideration |
+
+## Key ENSIPs
+
+These are the most significant ENSIPs that define how ENS works today:
+
+<AccordionGroup>
+  <Accordion title="ENSIP-1 — ENS (The Original Specification)">
+    The foundational specification for the Ethereum Name Service. ENSIP-1 defines the core architecture: the Registry, Resolvers, and Registrars — the three components that make ENS work. Every other ENSIP builds on the foundation established here.
+  </Accordion>
+  <Accordion title="ENSIP-3 — Reverse Resolution">
+    Defines the standard for reverse resolution — mapping an Ethereum address back to a human-readable ENS name. This powers the "0x1234…5678 is vitalik.eth" display you see in wallets and dapps.
+  </Accordion>
+  <Accordion title="ENSIP-5 — Text Records">
+    Establishes the standard for storing arbitrary text data in ENS resolvers. Text records power profile metadata like email addresses, Twitter handles, website URLs, descriptions, and other identity fields attached to an ENS name.
+  </Accordion>
+  <Accordion title="ENSIP-7 — Content Hash Field">
+    Defines the `contenthash` resolver field used to point ENS names at decentralized content — IPFS hashes, Swarm hashes, and other distributed storage systems. This is what makes `.eth` websites (like `vitalik.eth.limo`) work.
+  </Accordion>
+  <Accordion title="ENSIP-9 — Multichain Address Resolution (coinType)">
+    Extends ENS to store addresses for blockchains other than Ethereum. Using a `coinType` parameter based on SLIP-44, ENS names can resolve to Bitcoin, Solana, Litecoin, and hundreds of other chain addresses from a single name.
+  </Accordion>
+  <Accordion title="ENSIP-10 — Wildcard Resolution">
+    Introduces wildcard resolution, allowing a single ENS name to resolve subdomains that don't exist on-chain. This powers scalable subdomain systems (like `user.yourprotocol.eth`) without registering each subdomain individually.
+  </Accordion>
+  <Accordion title="ENSIP-11 — EVM Chain Address Resolution">
+    Extends ENSIP-9 specifically for EVM-compatible chains. Defines how to derive `coinType` values for EVM chains using their chain ID, making it simple to store and resolve addresses on Optimism, Arbitrum, Polygon, and other EVM networks.
+  </Accordion>
+  <Accordion title="ENSIP-12 — Avatar Records">
+    Standardizes how ENS names store and resolve avatar images. Defines accepted formats including IPFS URIs, HTTP URLs, and NFT references (e.g., `eip155:1/erc721:0x.../<tokenId>`), making ENS avatars interoperable across wallets and apps.
+  </Accordion>
+  <Accordion title="ENSIP-15 — ENS Name Normalization">
+    Defines the canonical normalization algorithm for ENS names — the rules for Unicode processing, case-folding, emoji handling, and character validation. ENSIP-15 ensures that `Alice.ETH` and `alice.eth` resolve to the same name, and that invalid or confusable characters are rejected.
+  </Accordion>
+  <Accordion title="ENSIP-16 — Offchain Metadata">
+    Introduces a standard for storing and retrieving ENS-related metadata from offchain sources. Builds on the CCIP-Read (EIP-3668) pattern to allow resolvers to return metadata hosted outside the Ethereum blockchain.
+  </Accordion>
+</AccordionGroup>
+
+You can browse the full list of all ENSIPs and their current statuses in the [ENSIPs repository](https://github.com/ensdomains/ensips).
+
+## How to Follow the ENSIPs Process
+
+You don't need to write an ENSIP to participate in the standards process. Here's how to stay engaged:
+
+- **Read open PRs** — Browse [open pull requests](https://github.com/ensdomains/ensips/pulls) in the ensips repository to see ENSIPs currently under review and add your feedback
+- **Watch the repository** — Star and watch [`ensdomains/ensips`](https://github.com/ensdomains/ensips) on GitHub to get notified of new proposals and status changes
+- **Discuss on the forum** — Technical ENSIPs often have corresponding threads on [discuss.ens.domains](https://discuss.ens.domains) where you can weigh in on design decisions
+
+## How to Submit an ENSIP
+
+If you've identified a gap in the ENS standards — a new record type, a resolution mechanism, an encoding format — submit an ENSIP to propose it formally.
+
+<Steps>
+  <Step title="Review existing ENSIPs">
+    Before writing your own, browse the [ENSIPs repository](https://github.com/ensdomains/ensips) to make sure your idea hasn't already been proposed. Check Draft and Stagnant ENSIPs as well as Final ones — you may be able to revive or build on existing work.
+  </Step>
+  <Step title="Fork the ENSIPs repository">
+    Go to [github.com/ensdomains/ensips](https://github.com/ensdomains/ensips) and fork it to your own GitHub account. This gives you a workspace to write your ENSIP without affecting the main repository.
+
+    ```bash
+    git clone https://github.com/YOUR_USERNAME/ensips.git
+    cd ensips
+    git checkout -b ensip-your-feature-name
+    ```
+  </Step>
+  <Step title="Write your ENSIP using the template">
+    Create a new file following the naming convention used in the repository (e.g., `ensip-XX.md`). Use the existing ENSIPs as your template guide. A well-formed ENSIP typically includes:
+
+    - **Preamble** — title, author(s), status, creation date
+    - **Abstract** — a brief summary of what the ENSIP proposes
+    - **Motivation** — why this change is needed and what problem it solves
+    - **Specification** — the precise technical definition, written clearly enough for any implementer to follow
+    - **Rationale** — explanation of design choices and considered alternatives
+    - **Backwards Compatibility** — how the proposal affects existing implementations
+    - **Security Considerations** — potential attack vectors or risks introduced
+
+    ```markdown
+    ---
+    ensip: XX
+    title: Your ENSIP Title
+    status: Draft
+    author: yourname (@yourgithub)
+    created: 2025-01-01
+    ---
+
+    ## Abstract
+
+    A short description of what this ENSIP proposes.
+
+    ## Motivation
+
+    Why is this change necessary?
+
+    ## Specification
+
+    The technical specification goes here...
+    ```
+  </Step>
+  <Step title="Open a Pull Request">
+    Push your branch and open a Pull Request against the main `ensdomains/ensips` repository. Write a clear PR description summarizing your proposal and linking to any related discussions, prior art, or prototype implementations.
+
+    ```bash
+    git add ensip-XX.md
+    git commit -m "Add ENSIP-XX: Your Feature Title"
+    git push origin ensip-your-feature-name
+    ```
+
+    Then open the PR on GitHub at [github.com/ensdomains/ensips/pulls](https://github.com/ensdomains/ensips/pulls).
+  </Step>
+  <Step title="Engage with feedback">
+    Once your PR is open, community members and ENS core contributors will review it. Respond to comments, clarify your specification, and iterate on the design. The goal is to produce a standard clear and complete enough that any developer can implement it correctly without asking the author.
+
+    If significant changes are required, update your PR and continue the discussion until consensus is reached.
+  </Step>
+</Steps>
+
+<Tip>
+  The strongest ENSIPs come with a working proof-of-concept or reference implementation. If you can link to a prototype resolver, a demo dapp, or a test suite alongside your ENSIP, reviewers can validate your proposal empirically rather than relying solely on the written specification.
+</Tip>
+
+<Note>
+  ENSIPs define technical standards — they don't require DAO governance votes to be adopted. However, ENSIPs that change core ENS contracts (rather than defining application-layer standards) will typically require an executable governance proposal as well. If your ENSIP requires on-chain contract changes, plan to go through the [proposals process](/dao/proposals) in parallel.
+</Note>

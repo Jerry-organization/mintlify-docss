@@ -1,0 +1,181 @@
+---
+title: "ENS Frequently Asked Questions (FAQ)"
+sidebarTitle: "FAQ"
+description: "Answers to the most common questions about ENS registration, pricing, records, reverse resolution, technical design, and DAO governance."
+---
+
+Find answers to the most common questions about ENS below. If you can't find what you're looking for, visit the [ENS Community Forum](https://discuss.ens.domains) or the [ENS Discord](https://chat.ens.domains).
+
+## Names & Registration
+
+<AccordionGroup>
+  <Accordion title="How do I register an ENS name?">
+    Visit the [ENS Manager App](https://app.ens.domains), search for the name you want, and follow the registration flow. The process involves two transactions on Ethereum Mainnet:
+
+    1. **Commit** — you submit a hash of your name to prevent front-running.
+    2. **Register** — after a short waiting period (around 60 seconds), you complete registration and the name is minted as an NFT to your wallet.
+
+    Make sure your wallet is connected to Ethereum Mainnet and has enough ETH to cover the registration fee plus gas.
+  </Accordion>
+
+  <Accordion title="How much does an ENS name cost?">
+    The ETH Registrar charges an annual fee denominated in USD but paid in ETH at the current exchange rate:
+
+    | Name length | Annual price |
+    |---|---|
+    | 5+ characters | $5 / year |
+    | 4 characters | $160 / year |
+    | 3 characters | $640 / year |
+
+    Shorter names are priced higher to reflect their scarcity. In addition to the registration fee, you will pay Ethereum network gas fees for each transaction. You can register a name for multiple years upfront to reduce the number of renewal transactions.
+  </Accordion>
+
+  <Accordion title="What characters are supported in ENS names?">
+    ENS names are normalized using [UTS-46](https://unicode.org/reports/tr46/), which means most Unicode characters — including accented letters and emoji — are technically supported. However, only names that pass ENS normalization (ENSIP-15) are resolvable by standard resolvers and displayed correctly by wallets and apps.
+
+    As a practical rule: stick to lowercase letters, digits, and hyphens for maximum compatibility. Avoid names that mix scripts (e.g., Latin and Cyrillic characters that look similar) since these are flagged as potentially confusable. You can check whether a name normalizes correctly at [nameguard.io](https://nameguard.io).
+  </Accordion>
+
+  <Accordion title="Can I register a name for longer than 1 year?">
+    Yes. There is no maximum registration duration. You can register a name for any number of years in a single transaction. Registering for multiple years saves you from paying gas for annual renewals and reduces the risk of accidentally letting your name expire.
+  </Accordion>
+
+  <Accordion title="What happens when my name expires?">
+    When a `.eth` name expires, it enters a **90-day grace period** during which only the original owner can renew it. After the grace period ends, the name is released back to the public and anyone can register it. Newly released names start with a temporary Dutch auction premium that decreases to zero over 21 days.
+
+    <Warning>
+      Your name continues to resolve to your address even after expiry (until someone else registers it and updates the records). Do not rely on this behavior — renew your name before it expires.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="What is the grace period?">
+    The grace period is a **90-day window** that begins immediately after a `.eth` name expires. During this window, the original owner is the only one who can renew the name. If the name is not renewed by the end of the grace period, it becomes available to the public for re-registration. You can renew a name at any time — including during the grace period — from the [ENS Manager App](https://app.ens.domains).
+  </Accordion>
+</AccordionGroup>
+
+## Records & Resolution
+
+<AccordionGroup>
+  <Accordion title="How do I set my ETH address on my ENS name?">
+    After registering a name, open it in the [ENS Manager App](https://app.ens.domains), navigate to the **Records** tab, and set the **ETH Address** field to your `0x` address. This triggers a transaction on Ethereum Mainnet. Once confirmed, anyone who sends ETH to your `.eth` name will have it routed to that address.
+
+    <Note>
+      Setting an ETH address record is separate from setting a **primary name** (reverse record). The ETH address record controls where funds sent *to* your name go. The primary name controls what name is *shown* when others look up your address.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Can I point my ENS name to addresses on other chains?">
+    Yes. ENS supports multi-chain address records for Bitcoin, Solana, Litecoin, Dogecoin, and dozens of other networks using the [ENSIP-9](https://docs.ens.domains/ensip/9) coin type standard. In the ENS Manager App, open the Records tab and add address records for each chain you want to support. Wallets and apps that support multi-chain resolution will automatically use the correct address for each network.
+  </Accordion>
+
+  <Accordion title="What are text records used for?">
+    Text records let you attach arbitrary key-value metadata to an ENS name. Common use cases include:
+
+    | Key | Example value | Use |
+    |---|---|---|
+    | `com.twitter` | `@alice` | Link your Twitter profile |
+    | `com.github` | `alice` | Link your GitHub profile |
+    | `email` | `alice@example.com` | Public contact email |
+    | `url` | `https://alice.xyz` | Personal or project website |
+    | `description` | `Builder at ENS` | Short bio |
+    | `avatar` | `ipfs://Qm...` | Profile picture |
+
+    Apps like ENS-aware wallets, decentralized social networks, and identity aggregators read these records to build a rich on-chain profile for your name.
+  </Accordion>
+
+  <Accordion title="How do I set a primary name (reverse record)?">
+    Your **primary name** tells the world which ENS name represents your Ethereum address. To set it:
+
+    <Steps>
+      <Step title="Open the ENS Manager App">
+        Go to [app.ens.domains](https://app.ens.domains) and connect the wallet whose address you want to associate.
+      </Step>
+      <Step title="Navigate to your profile">
+        Click your address or profile icon in the top-right corner and select **My Names**.
+      </Step>
+      <Step title="Set the primary name">
+        Find the name you want to use as your primary name, open it, and click **Set as Primary Name**. Confirm the transaction in your wallet.
+      </Step>
+    </Steps>
+
+    Once the transaction confirms, apps that support ENS reverse resolution will display your `.eth` name instead of your `0x` address.
+  </Accordion>
+</AccordionGroup>
+
+## Technical
+
+<AccordionGroup>
+  <Accordion title="Why are ENS names stored as hashes onchain?">
+    ENS names are stored and processed as fixed-length 32-byte hashes (called **nodes**) produced by the **namehash** algorithm. Hashes offer several advantages:
+
+    - **Fixed gas cost** — passing a 32-byte hash between contracts costs the same regardless of name length, whereas variable-length strings have unpredictable costs.
+    - **Composability** — the hierarchical structure of namehash means a parent node can always derive a child node deterministically, enabling trustless subdomain delegation.
+    - **Privacy** — knowing a node does not reveal the original name string; the preimage must be known separately.
+
+    The trade-off is that the raw name string is not stored on-chain by default. Off-chain indexers (like the ENS subgraph) reconstruct names from event logs.
+  </Accordion>
+
+  <Accordion title="What is CCIP-Read / offchain resolution?">
+    **CCIP-Read** (Cross-Chain Interoperability Protocol Read, [EIP-3668](https://eips.ethereum.org/EIPS/eip-3668)) is a standard that allows an Ethereum smart contract to securely fetch data from an offchain HTTP gateway. Here is how it works for ENS:
+
+    1. A client calls an ENS resolver to look up a record.
+    2. The resolver reverts with a special `OffchainLookup` error containing a gateway URL.
+    3. The client fetches the data from the gateway.
+    4. The client submits the gateway response back to the resolver, which verifies its authenticity onchain.
+
+    For ENS, CCIP-Read powers **offchain subname resolution** — a project can issue millions of subnames (e.g., `user.myapp.eth`) stored in a database, with no on-chain transaction required per subname. This makes large-scale subname issuance affordable.
+  </Accordion>
+
+  <Accordion title="How is ENS different from DNS?">
+    ENS and DNS share the same goal — mapping human-readable names to machine-readable identifiers — but differ in fundamental ways:
+
+    | | ENS | DNS |
+    |---|---|---|
+    | **Infrastructure** | Ethereum smart contracts | Centralized root servers |
+    | **Ownership** | Enforced by code (NFTs) | Requires trusting registrars |
+    | **Censorship resistance** | No single party can revoke a name | ICANN and registrars can revoke |
+    | **Record types** | Crypto addresses, content hashes, text | IP addresses, mail servers, TXT |
+    | **DNS compatibility** | Imports DNS names via DNSSEC | No crypto-native records |
+
+    ENS is designed to complement DNS, not replace it. You can import your existing DNS domain into ENS using DNSSEC, and DNS TLD operators can integrate directly with ENS.
+  </Accordion>
+
+  <Accordion title="Does ENS work on Layer 2 networks?">
+    ENS resolution always **starts from Ethereum Mainnet (L1)** — the registry and primary resolvers live on L1. However, ENS is actively expanding to L2 networks:
+
+    - **CCIP-Read** allows resolvers to fetch records stored on L2s (Optimism, Base, Arbitrum, etc.) and verify them on L1, enabling L2-native records at a fraction of the cost.
+    - You can use wagmi and viem on any chain, but always pass `chainId: 1` to ENS resolution hooks and actions so they read from Mainnet.
+    - Testnets: ENS is deployed on **Sepolia** for development and testing.
+
+    Future ENS upgrades (tracked through ENSIPs and DAO governance) are expected to bring fuller L2 support.
+  </Accordion>
+</AccordionGroup>
+
+## Governance
+
+<AccordionGroup>
+  <Accordion title="Who controls ENS?">
+    ENS is governed by the **ENS DAO** (Decentralized Autonomous Organization). The ENS root node — which controls TLD allocation, registrar policies, and protocol upgrades — is owned by the ENS DAO, not by any individual or company. ENS Labs (a company) builds and maintains ENS software, but protocol-level changes require DAO approval via on-chain governance.
+  </Accordion>
+
+  <Accordion title="What is the ENS DAO?">
+    The ENS DAO is the community governance body for ENS. It was established in November 2021 when ENS launched its governance token, $ENS. The DAO votes on proposals (called **ENS Proposals** or EPs) that cover:
+
+    - Protocol upgrades and new ENS contracts
+    - Registration pricing and fee structures
+    - Allocation of the ENS treasury
+    - Working group funding and steward elections
+
+    Anyone holding $ENS tokens (or receiving delegated votes) can participate in governance. Discussion happens on the [ENS Forum](https://discuss.ens.domains), and on-chain votes are executed via the ENS Governor contract.
+  </Accordion>
+
+  <Accordion title="What is the $ENS token?">
+    **$ENS** is the ERC-20 governance token for the ENS DAO. Token holders can vote on governance proposals or delegate their voting power to a representative. $ENS was distributed via an airdrop in November 2021 to historical ENS name registrants and contributors.
+
+    <Note>
+      $ENS is a **governance token**, not a utility token required to register or use ENS names. You do not need to hold $ENS to register a name, set records, or integrate ENS into your dApp.
+    </Note>
+
+    The total supply is 100 million $ENS tokens, distributed between the community treasury, contributors, and the airdrop. The DAO controls the treasury and decides how tokens are allocated over time.
+  </Accordion>
+</AccordionGroup>

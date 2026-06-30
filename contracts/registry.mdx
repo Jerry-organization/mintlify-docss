@@ -1,0 +1,185 @@
+---
+title: "ENS Registry Contract: Ownership and Resolution"
+sidebarTitle: "Registry"
+description: "The ENS Registry maps every name to an owner, resolver, and TTL. Learn its functions, events, and how it anchors the ENS system."
+---
+
+The ENS Registry is the single source of truth for name ownership in the Ethereum Name Service. Every ENS lookup — whether you're resolving an address, checking who owns a name, or managing subnames — begins with a query to this contract. It stores three pieces of information for each name: its **owner**, its **resolver**, and its **TTL**.
+
+<Note>
+  The Registry is deployed at `0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e` on Ethereum Mainnet. It is owned by the [ENS Root](https://etherscan.io/address/0xaB528d626EC275E3faD363fF1393A41F581c5897), which itself is controlled by the ENS DAO.
+</Note>
+
+## How Names Are Identified
+
+The Registry identifies names using their **namehash** — a deterministic 32-byte hash computed recursively from each label of a name. For example, `alice.eth` becomes `namehash('alice.eth')`, and `sub.alice.eth` incorporates that parent hash. This means you never store the raw string on-chain; you always work with the `bytes32` node.
+
+```typescript
+import { namehash } from 'viem/ens'
+
+const node = namehash('alice.eth')
+// => '0x787192fc5378cc32aa956ddfdedbf26b24e8d78e40109add0eea2c1a012c3dec'
+```
+
+## Registrars and TLDs
+
+Top-level domains like `.eth`, `.com`, and `.addr.reverse` are owned by **registrar** contracts, not by individual users. Each registrar enforces its own rules for allocating names beneath it.
+
+| TLD | Controller |
+|---|---|
+| `.eth` | [ETH Registrar](/contracts/eth-registrar) |
+| `.com`, `.xyz`, etc. | [DNS Registrar](/contracts/dns-registrar) |
+| `.addr.reverse` | [Reverse Registrar](/contracts/reverse-registrar) |
+| `[root]` | ENS Registry (ENS DAO) |
+
+## Reading from the Registry
+
+Use these read-only functions to inspect any name's current state:
+
+```solidity
+// Returns the owner of a name node
+ENSRegistry.owner(bytes32 node) view returns (address)
+
+// Returns the resolver contract assigned to a name
+ENSRegistry.resolver(bytes32 node) view returns (address)
+
+// Returns the time-to-live (caching hint) for a name
+ENSRegistry.ttl(bytes32 node) view returns (uint64)
+
+// Returns true if a record exists for the node
+ENSRegistry.recordExists(bytes32 node) view returns (bool)
+
+// Returns true if operator is approved to manage all names owned by owner
+ENSRegistry.isApprovedForAll(address owner, address operator) view returns (bool)
+```
+
+### Example: Check the owner and resolver of a name
+
+```typescript
+import { createPublicClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+import { namehash } from 'viem/ens'
+
+const client = createPublicClient({ chain: mainnet, transport: http() })
+
+const REGISTRY = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e'
+const registryAbi = [
+  'function owner(bytes32 node) view returns (address)',
+  'function resolver(bytes32 node) view returns (address)',
+] as const
+
+const node = namehash('alice.eth')
+
+const [owner, resolver] = await Promise.all([
+  client.readContract({ address: REGISTRY, abi: registryAbi, functionName: 'owner', args: [node] }),
+  client.readContract({ address: REGISTRY, abi: registryAbi, functionName: 'resolver', args: [node] }),
+])
+```
+
+## Writing to the Registry
+
+The registry enforces that only the **current owner** of a node (or an approved operator) can update its records.
+
+```solidity
+// Transfer ownership of a name to a new address
+ENSRegistry.setOwner(bytes32 node, address owner)
+
+// Assign a resolver contract to a name
+ENSRegistry.setResolver(bytes32 node, address resolver)
+
+// Update the TTL hint for a name
+ENSRegistry.setTTL(bytes32 node, uint64 ttl)
+
+// Set all three fields atomically for an existing node
+ENSRegistry.setRecord(bytes32 node, address owner, address resolver, uint64 ttl)
+
+// Create or update a subnode (child name) — sets owner only
+ENSRegistry.setSubnodeOwner(bytes32 node, bytes32 label, address owner) returns (bytes32)
+
+// Create or update a subnode with full record — sets owner, resolver, and TTL atomically
+ENSRegistry.setSubnodeRecord(bytes32 node, bytes32 label, address owner, address resolver, uint64 ttl)
+
+// Grant or revoke an operator's ability to manage all your names
+ENSRegistry.setApprovalForAll(address operator, bool approved)
+```
+
+<Warning>
+  `setOwner` and `setSubnodeOwner` change who controls a name in the registry. If you're using the Name Wrapper, manage ownership through the wrapper contract instead — the wrapper holds registry ownership on your behalf.
+</Warning>
+
+### Example: Create a subname
+
+```solidity
+import { keccak256, toBytes } from 'viem'
+
+// The parent node you already own
+const parentNode = namehash('alice.eth')
+
+// keccak256 hash of just the new label (not the full name)
+const labelHash = keccak256(toBytes('sub'))
+
+// Your chosen resolver and TTL
+const resolver = '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63'
+const ttl = 0n
+
+await walletClient.writeContract({
+  address: REGISTRY,
+  abi: registryAbi,
+  functionName: 'setSubnodeRecord',
+  args: [parentNode, labelHash, yourAddress, resolver, ttl],
+})
+```
+
+## Events
+
+Listen for these events to track changes to any name in the registry:
+
+```solidity
+// Fired when a subnode's owner is set (by setSubnodeOwner or setSubnodeRecord)
+event NewOwner(bytes32 indexed node, bytes32 indexed label, address owner)
+
+// Fired when an existing node's owner is transferred
+event Transfer(bytes32 indexed node, address owner)
+
+// Fired when a resolver is assigned or updated
+event NewResolver(bytes32 indexed node, address resolver)
+
+// Fired when a TTL is updated
+event NewTTL(bytes32 indexed node, uint64 ttl)
+
+// Fired when operator approval changes
+event ApprovalForAll(address indexed owner, address indexed operator, bool approved)
+```
+
+## Full ABI Reference
+
+<Tabs>
+  <Tab title="Read Functions">
+    | Function | Returns | Description |
+    |---|---|---|
+    | `owner(bytes32 node)` | `address` | Current owner of the node |
+    | `resolver(bytes32 node)` | `address` | Assigned resolver contract |
+    | `ttl(bytes32 node)` | `uint64` | Caching TTL hint |
+    | `recordExists(bytes32 node)` | `bool` | Whether the node has been set |
+    | `isApprovedForAll(address owner, address operator)` | `bool` | Operator approval status |
+  </Tab>
+  <Tab title="Write Functions">
+    | Function | Description |
+    |---|---|
+    | `setOwner(bytes32 node, address owner)` | Transfer node ownership |
+    | `setResolver(bytes32 node, address resolver)` | Assign a resolver |
+    | `setTTL(bytes32 node, uint64 ttl)` | Update TTL hint |
+    | `setRecord(bytes32 node, address owner, address resolver, uint64 ttl)` | Set all fields atomically |
+    | `setSubnodeOwner(bytes32 node, bytes32 label, address owner)` | Create/update subnode owner |
+    | `setSubnodeRecord(bytes32 node, bytes32 label, address owner, address resolver, uint64 ttl)` | Create/update subnode record |
+    | `setApprovalForAll(address operator, bool approved)` | Grant/revoke operator |
+  </Tab>
+</Tabs>
+
+## Who Owns the Registry?
+
+The root node of the registry is owned by the [ENS Root contract](https://etherscan.io/address/0xaB528d626EC275E3faD363fF1393A41F581c5897), which is governed by the [ENS DAO](https://etherscan.io/address/0xFe89cc7aBB2C4183683ab71653C4cdc9B02D44b7). You can verify this by calling `owner(namehash(''))` on the Registry contract.
+
+<Tip>
+  You can verify the full ownership chain yourself on Etherscan. Call `owner(bytes32(0))` on the registry to get the root owner, then trace from the Root contract to the DAO wallet.
+</Tip>

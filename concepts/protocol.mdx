@@ -1,0 +1,134 @@
+---
+title: "ENS Protocol: Architecture and Name Lifecycle"
+sidebarTitle: "Protocol"
+description: "Learn how ENS maps human-readable names to on-chain identifiers using a three-component architecture of Registry, Resolvers, and Registrars."
+---
+
+ENS (Ethereum Name Service) is a distributed, open, and extensible naming system built on Ethereum. It maps human-readable names like `alice.eth` to machine-readable identifiers — Ethereum addresses, other cryptocurrency addresses, content hashes, metadata, and more — and does so in a fully permissionless, trustless way.
+
+## Core Architecture
+
+ENS is built on three interlocking components. Understanding how they relate to each other helps you predict how any name behaves on-chain.
+
+<CardGroup cols={3}>
+  <Card title="Registry" icon="database">
+    A single root contract that maps every ENS name (stored as a namehash) to its owner, resolver contract address, and TTL.
+  </Card>
+  <Card title="Resolvers" icon="magnifying-glass">
+    Contracts that store and return records for a name — addresses, text keys, content hashes, ABIs, and more.
+  </Card>
+  <Card title="Registrars" icon="file-contract">
+    Contracts that govern who can register names under a given TLD. The ETH Registrar controls `.eth`; DNS TLDs use DNSSEC proofs.
+  </Card>
+</CardGroup>
+
+When you look up `alice.eth`, the ENS client first asks the **Registry** which resolver owns that name, then asks the **Resolver** for the specific record you need. The **Registrar** is only involved when names are registered or transferred — not during resolution.
+
+## How Names Are Identified On-Chain
+
+ENS never stores raw strings on-chain. Instead, every name is converted to a fixed-length 32-byte value called a **namehash** using a recursive hashing algorithm (defined in [ENSIP-1](https://docs.ens.domains/ensip/1)).
+
+The algorithm works from right to left across the dot-separated labels:
+
+```
+namehash('')           = 0x0000...0000  (the root node)
+namehash('eth')        = keccak256(namehash('') + keccak256('eth'))
+namehash('alice.eth')  = keccak256(namehash('eth') + keccak256('alice'))
+```
+
+In code you rarely need to compute this yourself — libraries like viem, ethers.js, and ensjs do it automatically when you pass a name string. The namehash is what you use when calling registry or resolver contracts directly.
+
+```typescript
+import { namehash } from 'viem/ens'
+
+const node = namehash('alice.eth')
+// 0x787192fc5378cc32aa956ddfdedbf26b24e8d78e40109add0eea2c1a012c3dec
+```
+
+## Name Hierarchy
+
+ENS follows the same hierarchical structure as DNS, reading from right to left.
+
+```
+[label].[parent].[tld]
+  pay  . alice  . eth
+```
+
+- **TLDs** (`.eth`, `.com`, `.xyz`) sit at the top of the hierarchy and are controlled by registrar contracts.
+- **Second-level names** (`alice.eth`) are registered directly under a TLD through its registrar.
+- **Subnames** (`pay.alice.eth`) are created by the owner of the parent name — no registrar required, no extra fees beyond gas.
+
+Because the hierarchy is fully on-chain, anyone who owns a name at any level can programmatically issue subnames under it, create custom resolver logic, or delegate control to another address.
+
+<Note>
+  ENS supports far more than `.eth`. Any DNS TLD with DNSSEC enabled (`.com`, `.org`, `.xyz`, and hundreds more) can be imported into ENS and used exactly like a native ENS name.
+</Note>
+
+### Subnames
+
+If you own `alice.eth`, you can create `pay.alice.eth`, `blog.alice.eth`, or any other subname and point each one at a different address, content hash, or resolver contract. Subname creation requires no permission from ENS — it is entirely controlled by the parent name's owner.
+
+<Tip>
+  You can build a custom resolver to issue subnames programmatically — useful for apps, DAOs, or communities that want to give members a name under a shared parent.
+</Tip>
+
+## Supported TLDs
+
+<Tabs>
+  <Tab title=".eth">
+    The native ENS TLD. Names are registered through the **ETH Registrar** (a smart contract) as ERC-721 NFTs. Ownership is secured entirely by Ethereum. Registration requires an annual fee paid in ETH, and names expire if not renewed.
+  </Tab>
+  <Tab title="DNS Names">
+    Any DNS TLD that has DNSSEC enabled can be imported into ENS. You prove ownership of the DNS name by adding a `_ens` TXT record to your DNS zone, then submitting a DNSSEC proof on-chain. Once claimed, the DNS name behaves identically to a `.eth` name within ENS.
+  </Tab>
+  <Tab title="Subnames">
+    Subnames (e.g., `user.app.eth`) can be created by any name owner without going through a registrar. The parent name owner has full control over the subname namespace and can set up any resolution logic they choose.
+  </Tab>
+</Tabs>
+
+## The ENS Name Lifecycle
+
+<Steps>
+  <Step title="Register">
+    Submit a registration transaction to the relevant registrar (e.g., the ETH Registrar for `.eth` names). For `.eth`, a two-step commit-reveal process prevents front-running. You pay a registration fee proportional to the name length and desired duration.
+  </Step>
+  <Step title="Set a Resolver">
+    Assign a resolver contract to your name in the Registry. Most users point to the **Public Resolver** — a general-purpose contract maintained by ENS Labs that supports all standard record types.
+  </Step>
+  <Step title="Configure Records">
+    Write your records to the resolver: ETH address, other chain addresses, avatar, social handles, content hash, and more. Each write is an on-chain transaction (or a signed off-chain update if your resolver supports it).
+  </Step>
+  <Step title="Renew">
+    `.eth` names expire after their registration period. Renew before expiry to retain ownership. There is a 90-day grace period after expiry during which only the original owner can renew. After the grace period, the name is released for anyone to register.
+  </Step>
+  <Step title="Transfer or Expire">
+    Transfer the name to another address at any time by sending the NFT. If the name expires and is not renewed, it re-enters the registration pool and becomes available to others.
+  </Step>
+</Steps>
+
+## Permissionless Extensibility
+
+The Registry and resolver architecture is deliberately open. You can:
+
+- Deploy your own resolver contract with custom record types or access control.
+- Build a registrar that issues subnames under your name with your own pricing or eligibility rules.
+- Use CCIP-Read to resolve records stored on Layer 2 or in an off-chain database, while the name itself remains anchored on Ethereum Mainnet.
+
+No permission from ENS Labs is required for any of these. The protocol is a set of on-chain contracts with open interfaces.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Name Resolution" href="/concepts/resolution" icon="arrow-right">
+    Understand the full resolution flow — how a name becomes an address or record.
+  </Card>
+  <Card title="Contract Deployments" href="/concepts/deployments" icon="file-code">
+    Find the canonical addresses for every ENS contract on Mainnet and Sepolia.
+  </Card>
+  <Card title="DNS Names" href="/concepts/dns-names" icon="globe">
+    Import your existing DNS domain into ENS using DNSSEC proofs.
+  </Card>
+  <Card title="Layer 2 & CCIP-Read" href="/concepts/layer2" icon="layer-group">
+    Resolve ENS records stored on L2 networks or off-chain databases.
+  </Card>
+</CardGroup>

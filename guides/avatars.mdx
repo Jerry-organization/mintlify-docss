@@ -1,0 +1,280 @@
+---
+title: "ENS Avatar Records: Display Profile Pictures"
+sidebarTitle: "Avatars"
+description: "Learn how to fetch, display, and set ENS avatar records, including NFT avatars, IPFS URIs, and fallback handling for your application."
+---
+
+The `avatar` text record lets users attach a profile picture to their ENS name and carry it across every application that supports ENS. Whether it's a hosted image, an IPFS file, or an NFT they own, ENS resolves the avatar URI and returns a displayable URL for you to render.
+
+## Fetching an Avatar
+
+All you need to fetch an avatar is the user's ENS name. Pass it to your preferred library and you'll get back a resolved image URL.
+
+<Tabs>
+  <Tab title="wagmi">
+    ```tsx
+    import { normalize } from 'viem/ens'
+    import { useEnsAvatar } from 'wagmi'
+
+    export function Avatar({ name }: { name: string }) {
+      const { data: avatarUrl, isLoading } = useEnsAvatar({
+        name: normalize('alice.eth'),
+        chainId: 1, // Always use mainnet for avatar resolution
+      })
+
+      if (isLoading) return <div className="avatar-placeholder" />
+
+      return (
+        <img
+          src={avatarUrl ?? `https://avatars.jakerunzer.com/${name}`}
+          alt={name}
+          style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover' }}
+        />
+      )
+    }
+    ```
+  </Tab>
+  <Tab title="viem">
+    ```ts
+    import { createPublicClient, http } from 'viem'
+    import { mainnet } from 'viem/chains'
+    import { normalize } from 'viem/ens'
+
+    const client = createPublicClient({
+      chain: mainnet,
+      transport: http(),
+    })
+
+    const avatarUrl = await client.getEnsAvatar({
+      name: normalize('alice.eth'),
+    })
+
+    // avatarUrl is a fully-resolved URL string, or null if not set
+    console.log(avatarUrl)
+    ```
+  </Tab>
+  <Tab title="ethers v5">
+    ```ts
+    import { ethers } from 'ethers'
+
+    const provider = new ethers.providers.JsonRpcProvider()
+    const avatarUrl = await provider.getAvatar('alice.eth')
+
+    // avatarUrl is null if no avatar is set or the record is invalid
+    console.log(avatarUrl)
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  Always set `chainId: 1` in wagmi's `useEnsAvatar` hook. ENS resolution always starts from Ethereum Mainnet, even if your app runs on a different chain.
+</Note>
+
+### Starting from an Address
+
+If you only have an Ethereum address, resolve the primary name first, then fetch the avatar:
+
+```tsx
+import { normalize } from 'viem/ens'
+import { useEnsAvatar, useEnsName } from 'wagmi'
+import { mainnet } from 'wagmi/chains'
+
+export function AddressAvatar({ address }: { address: `0x${string}` }) {
+  const { data: name } = useEnsName({ address, chainId: mainnet.id })
+
+  const { data: avatarUrl } = useEnsAvatar({
+    name: name ? normalize(name) : undefined,
+    chainId: mainnet.id,
+    query: { enabled: !!name },
+  })
+
+  return (
+    <img
+      src={avatarUrl ?? `https://avatars.jakerunzer.com/${address}`}
+      alt={name ?? address}
+    />
+  )
+}
+```
+
+---
+
+## Supported URI Schemes
+
+The `avatar` text record stores a URI. ENS clients resolve this URI into a displayable image. The following schemes are officially supported:
+
+### HTTPS
+
+The simplest form — a direct link to a hosted image. Libraries return the URL as-is.
+
+```
+https://example.com/avatar.png
+```
+
+### IPFS
+
+A content-addressed file on the IPFS network. Libraries typically resolve this through a public gateway.
+
+```
+ipfs://QmHash...
+```
+
+### Data URIs
+
+Inline base64-encoded images. Libraries return the data URI directly.
+
+```
+data:image/png;base64,iVBORw0KGgo...
+```
+
+### EIP-155 NFT Avatars
+
+The most powerful scheme — links to a specific NFT (ERC-721 or ERC-1155) that the name owner holds. The format is:
+
+```
+eip155:1/erc721:0xContractAddress/TokenID
+eip155:1/erc1155:0xContractAddress/TokenID
+```
+
+For example:
+
+```
+eip155:1/erc721:0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d/1234
+```
+
+When a client resolves an NFT avatar, it:
+
+1. Calls `ownerOf(tokenId)` (ERC-721) or `balanceOf(owner, tokenId)` (ERC-1155) to verify the name's address owns the token.
+2. Calls `tokenURI(tokenId)` to fetch the NFT metadata JSON.
+3. Extracts the `image` field from the metadata.
+4. Returns the resolved image URL.
+
+<Warning>
+  NFT avatars are only valid when the name's Ethereum address actually owns the NFT. If ownership transfers, the avatar automatically becomes invalid. Always verify ownership before displaying NFT avatars in sensitive contexts.
+</Warning>
+
+---
+
+## Setting an Avatar
+
+### Via the ENS App
+
+The easiest way to set your avatar is through [app.ens.domains](https://app.ens.domains). Navigate to your name, go to **Profile → Edit**, and either upload an image or paste a URI.
+
+### Via Contract Call
+
+Call `setText` on the Public Resolver with the key `"avatar"`:
+
+```ts
+import { createWalletClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+import { namehash, normalize } from 'viem/ens'
+
+const walletClient = createWalletClient({
+  chain: mainnet,
+  transport: http(),
+})
+
+// Set a plain HTTPS avatar
+await walletClient.writeContract({
+  address: '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63', // Public Resolver
+  abi: [
+    {
+      name: 'setText',
+      type: 'function',
+      inputs: [
+        { name: 'node', type: 'bytes32' },
+        { name: 'key', type: 'string' },
+        { name: 'value', type: 'string' },
+      ],
+    },
+  ],
+  functionName: 'setText',
+  args: [
+    namehash(normalize('alice.eth')),
+    'avatar',
+    'https://example.com/alice.png',
+  ],
+})
+```
+
+To set an NFT avatar:
+
+```ts
+// Set an ERC-721 NFT avatar
+await walletClient.writeContract({
+  address: '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63',
+  abi: [/* setText ABI */],
+  functionName: 'setText',
+  args: [
+    namehash(normalize('alice.eth')),
+    'avatar',
+    'eip155:1/erc721:0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d/1234',
+  ],
+})
+```
+
+---
+
+## Fallback Handling
+
+Not every name has an avatar set. Build a graceful fallback so your UI never shows a broken image:
+
+```tsx
+import { normalize } from 'viem/ens'
+import { useEnsAvatar, useEnsName } from 'wagmi'
+import { mainnet } from 'wagmi/chains'
+
+const FALLBACK_URL = (identifier: string) =>
+  `https://avatars.jakerunzer.com/${identifier}`
+
+export function RobustAvatar({ address }: { address: `0x${string}` }) {
+  const { data: name } = useEnsName({ address, chainId: mainnet.id })
+  const { data: avatarUrl } = useEnsAvatar({
+    name: name ? normalize(name) : undefined,
+    chainId: mainnet.id,
+    query: { enabled: !!name },
+  })
+
+  const src = avatarUrl ?? FALLBACK_URL(name ?? address)
+
+  return (
+    <img
+      src={src}
+      alt={name ?? address}
+      onError={(e) => {
+        // If the resolved avatar fails to load, fall back to a generated avatar
+        ;(e.target as HTMLImageElement).src = FALLBACK_URL(address)
+      }}
+    />
+  )
+}
+```
+
+---
+
+## Display Recommendations
+
+Avatar files vary widely in format, size, and aspect ratio. Keep the following in mind when rendering them:
+
+| Property | Recommendation |
+|---|---|
+| **File formats** | Expect `png`, `jpg`, `webp`, `gif`, `svg`, or even `mp4` |
+| **Aspect ratio** | Use `object-fit: cover` so any aspect ratio fills your avatar container cleanly |
+| **Transparency** | Set a background color — many avatars use transparent backgrounds |
+| **File size** | Set a sensible timeout; there is no size cap on avatar URIs |
+| **Animated files** | Decide whether your UI should play animations or show a static frame |
+
+### ENS Metadata Service
+
+ENS Labs runs a free [metadata service](https://metadata.ens.domains/docs) that resolves avatar URIs via a simple HTTP request, without any Ethereum node interaction:
+
+```
+GET https://metadata.ens.domains/mainnet/avatar/{name}
+```
+
+This is useful for server-side rendering or environments without direct RPC access. Because it is centralized, prefer on-chain resolution in production where possible.
+
+<Tip>
+  Always normalize the ENS name with `normalize()` from `viem/ens` before passing it to any resolution function. Skipping normalization can cause silent failures for names containing uppercase letters, accented characters, or unusual Unicode.
+</Tip>

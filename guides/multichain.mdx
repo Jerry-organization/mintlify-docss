@@ -1,0 +1,297 @@
+---
+title: "Multichain Address Records in ENS"
+sidebarTitle: "Multichain"
+description: "Learn how ENS stores addresses for 100+ blockchains using SLIP-44 coin types, and how to read and write multichain address records in your app."
+---
+
+ENS isn't limited to Ethereum addresses. A single ENS name can store addresses for Bitcoin, Litecoin, Solana, Optimism, Arbitrum, Base, and hundreds of other blockchains — all in the same Resolver contract. This makes an ENS name a universal address book entry: send any asset type to `alice.eth` and the sender's wallet looks up the right address for the right chain.
+
+Address records are stored per **coin type**, a numeric identifier defined by [SLIP-44](https://github.com/satoshilabs/slips/blob/master/slip-0044.md) for non-EVM chains, with a special formula for EVM chains.
+
+---
+
+## Coin Types
+
+### Common Non-EVM Coin Types
+
+| Coin | Coin Type |
+|---|---|
+| Bitcoin (BTC) | `0` |
+| Litecoin (LTC) | `2` |
+| Dogecoin (DOGE) | `3` |
+| Solana (SOL) | `501` |
+| Ripple (XRP) | `144` |
+| Cosmos (ATOM) | `118` |
+
+### EVM Chain Coin Types
+
+EVM-compatible chains (including L2s) use a formula defined in [ENSIP-11](https://docs.ens.domains/ensip/11):
+
+```
+coinType = 0x80000000 | chainId
+```
+
+| Chain | Chain ID | Coin Type |
+|---|---|---|
+| Ethereum | 1 | `60` (special legacy value) |
+| Optimism | 10 | `2147483658` |
+| Arbitrum One | 42161 | `2147525809` |
+| Base | 8453 | `2147492101` |
+| Polygon | 137 | `2147483785` |
+| Scroll | 534352 | `2148017200` |
+| Linea | 59144 | `2147542792` |
+
+<Note>
+  Ethereum's coin type is `60` by convention (from SLIP-44), not the result of the EVM formula. All other EVM chains use `0x80000000 | chainId`.
+</Note>
+
+### Computing the Coin Type for Any EVM Chain
+
+```ts
+import { toCoinType } from 'viem'
+import { base, optimism, arbitrum } from 'viem/chains'
+
+console.log(toCoinType(base.id))      // 2147492101
+console.log(toCoinType(optimism.id))  // 2147483658
+console.log(toCoinType(arbitrum.id))  // 2147525809
+
+// Or manually:
+const chainId = 8453 // Base
+const coinType = 0x80000000 | chainId
+console.log(coinType) // 2147492101
+```
+
+---
+
+## Reading Multichain Addresses
+
+### Read an Ethereum Address
+
+```ts
+import { createPublicClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+import { normalize } from 'viem/ens'
+
+const client = createPublicClient({ chain: mainnet, transport: http() })
+
+// Default (coinType 60 = Ethereum)
+const ethAddress = await client.getEnsAddress({
+  name: normalize('alice.eth'),
+})
+
+console.log(ethAddress) // '0x...'
+```
+
+### Read a Non-EVM Address (Bitcoin)
+
+```ts
+// coinType 0 = Bitcoin
+const btcAddress = await client.getEnsAddress({
+  name: normalize('alice.eth'),
+  coinType: 0, // Bitcoin (SLIP-44 coin type 0)
+})
+
+console.log(btcAddress) // 'bc1q...' or null
+```
+
+### Read an L2 Address
+
+```ts
+import { toCoinType } from 'viem'
+import { base } from 'viem/chains'
+
+const baseAddress = await client.getEnsAddress({
+  name: normalize('alice.eth'),
+  coinType: toCoinType(base.id), // 2147492101
+})
+
+console.log(baseAddress) // '0x...' or null
+```
+
+### Read Multiple Chains at Once
+
+Use `ensjs` to batch all coin type lookups into one RPC round-trip:
+
+```ts
+import { createEnsPublicClient } from '@ensdomains/ensjs'
+import { toCoinType } from 'viem'
+import { http } from 'viem'
+import { arbitrum, base, mainnet, optimism } from 'viem/chains'
+
+const client = createEnsPublicClient({
+  chain: mainnet,
+  transport: http(),
+})
+
+const records = await client.getRecords({
+  name: 'alice.eth',
+  coins: [
+    'eth',                        // Ethereum (coin type 60)
+    'btc',                        // Bitcoin (coin type 0)
+    toCoinType(base.id),          // Base
+    toCoinType(optimism.id),      // Optimism
+    toCoinType(arbitrum.id),      // Arbitrum One
+  ],
+})
+
+for (const coin of records.coins) {
+  console.log(`${coin.name}: ${coin.value}`)
+}
+```
+
+### wagmi Hook with Coin Type
+
+```tsx
+import { toCoinType } from 'viem'
+import { useEnsAddress } from 'wagmi'
+import { base, mainnet } from 'wagmi/chains'
+import { normalize } from 'viem/ens'
+
+export function BaseAddress({ name }: { name: string }) {
+  const { data: address } = useEnsAddress({
+    name: normalize(name),
+    chainId: mainnet.id,              // always resolve from L1
+    coinType: toCoinType(base.id),    // Base address
+  })
+
+  return <span>{address ?? 'No Base address set'}</span>
+}
+```
+
+---
+
+## Writing Multichain Addresses
+
+### Set an Address via the Public Resolver
+
+The Public Resolver's `setAddr(node, coinType, address)` stores an address for any coin type. Non-EVM addresses are passed as raw bytes; EVM addresses are hex-encoded.
+
+```ts
+import { createWalletClient, http, toBytes } from 'viem'
+import { mainnet } from 'viem/chains'
+import { namehash, normalize } from 'viem/ens'
+
+const walletClient = createWalletClient({ chain: mainnet, transport: http() })
+const PUBLIC_RESOLVER = '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63'
+
+const resolverAbi = [
+  {
+    name: 'setAddr',
+    type: 'function',
+    inputs: [
+      { name: 'node', type: 'bytes32' },
+      { name: 'coinType', type: 'uint256' },
+      { name: 'a', type: 'bytes' },
+    ],
+  },
+] as const
+
+const node = namehash(normalize('alice.eth'))
+
+// Set a Base address (EVM — pass as hex bytes)
+await walletClient.writeContract({
+  address: PUBLIC_RESOLVER,
+  abi: resolverAbi,
+  functionName: 'setAddr',
+  args: [node, BigInt(2147492101), '0xYourBaseAddress'],
+})
+```
+
+### Set a Bitcoin Address
+
+Bitcoin addresses use Base58Check encoding. Pass the decoded bytes:
+
+```ts
+import { base58 } from '@scure/base'
+
+const btcAddressString = '1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf Na'
+const btcAddressBytes = base58.decode(btcAddressString)
+
+await walletClient.writeContract({
+  address: PUBLIC_RESOLVER,
+  abi: resolverAbi,
+  functionName: 'setAddr',
+  args: [node, 0n, btcAddressBytes], // coinType 0 = Bitcoin
+})
+```
+
+<Tip>
+  Use the ENS app at [app.ens.domains](https://app.ens.domains) to set multichain addresses without worrying about byte encoding. It handles address format conversion for each supported coin type automatically.
+</Tip>
+
+### Batch Multiple Chain Addresses with multicall
+
+Set addresses for several chains in one transaction:
+
+```ts
+import { encodeFunctionData, createWalletClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+import { namehash, normalize } from 'viem/ens'
+import { toCoinType } from 'viem'
+import { base, optimism } from 'viem/chains'
+
+const node = namehash(normalize('alice.eth'))
+
+const resolverAbi = [
+  {
+    name: 'setAddr',
+    type: 'function',
+    inputs: [
+      { name: 'node', type: 'bytes32' },
+      { name: 'coinType', type: 'uint256' },
+      { name: 'a', type: 'bytes' },
+    ],
+  },
+  {
+    name: 'multicall',
+    type: 'function',
+    inputs: [{ name: 'data', type: 'bytes[]' }],
+    outputs: [{ name: 'results', type: 'bytes[]' }],
+  },
+] as const
+
+const calls = [
+  encodeFunctionData({
+    abi: resolverAbi,
+    functionName: 'setAddr',
+    args: [node, BigInt(toCoinType(base.id)), '0xAliceOnBase'],
+  }),
+  encodeFunctionData({
+    abi: resolverAbi,
+    functionName: 'setAddr',
+    args: [node, BigInt(toCoinType(optimism.id)), '0xAliceOnOptimism'],
+  }),
+]
+
+const walletClient = createWalletClient({ chain: mainnet, transport: http() })
+
+await walletClient.writeContract({
+  address: '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63',
+  abi: resolverAbi,
+  functionName: 'multicall',
+  args: [calls],
+})
+```
+
+---
+
+## ENS Resolution Always Starts on Mainnet
+
+Even if your dapp is deployed on Base or Optimism, ENS resolution always queries Ethereum Mainnet. Add a Mainnet RPC to your wagmi config and always pass `chainId: 1`:
+
+```tsx
+import { useEnsAddress } from 'wagmi'
+import { mainnet } from 'wagmi/chains'
+import { normalize } from 'viem/ens'
+
+export function Name() {
+  const { data: address } = useEnsAddress({
+    name: normalize('alice.eth'),
+    chainId: mainnet.id, // Required — ENS lives on L1
+  })
+
+  return <div>{address}</div>
+}
+```
+
+This works regardless of which chain your app's wallet is connected to.

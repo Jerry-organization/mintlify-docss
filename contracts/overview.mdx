@@ -1,0 +1,88 @@
+---
+title: "ENS Smart Contracts Overview"
+sidebarTitle: "Overview"
+description: "A guide to the ENS smart contract architecture — registry, registrars, resolvers, and the Name Wrapper — and how they work together."
+---
+
+The Ethereum Name Service is built on a set of purpose-built smart contracts deployed on Ethereum Mainnet. Each contract has a distinct responsibility: the **Registry** stores ownership records, **Registrars** govern how names are claimed, **Resolvers** answer lookup queries, and the **Name Wrapper** adds fine-grained permission control via ERC-1155 NFTs.
+
+## Architecture at a Glance
+
+<CardGroup cols={2}>
+  <Card title="Registry" icon="database" href="/contracts/registry">
+    The root contract that maps every ENS name (as a namehash node) to an owner, resolver, and TTL. All ENS lookups start here.
+  </Card>
+  <Card title="ETH Registrar" icon="ethereum" href="/contracts/eth-registrar">
+    Manages registration and renewal of `.eth` second-level domains. Implements a commit-reveal scheme and Dutch-auction premium pricing.
+  </Card>
+  <Card title="DNS Registrar" icon="globe" href="/contracts/dns-registrar">
+    Lets you claim DNS names (e.g. `example.com`) in ENS by submitting DNSSEC proofs, with an optional gasless path via CCIP-Read.
+  </Card>
+  <Card title="Reverse Registrar" icon="arrow-left-right" href="/contracts/reverse-registrar">
+    Maps Ethereum addresses back to ENS names, powering the "primary name" feature on Mainnet and popular L2s.
+  </Card>
+  <Card title="Resolvers" icon="magnifying-glass" href="/contracts/resolvers">
+    Store and serve records — addresses, text, content hashes, and more. Includes the Public Resolver, Universal Resolver, and CCIP-Read resolvers.
+  </Card>
+  <Card title="Name Wrapper" icon="box" href="/contracts/namewrapper">
+    Wraps any ENS name as an ERC-1155 NFT and enforces permissions through a fuse-based system.
+  </Card>
+</CardGroup>
+
+## Deployed Addresses (Mainnet)
+
+| Contract | Address |
+|---|---|
+| Registry | `0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e` |
+| ETH Registrar (BaseRegistrar) | `0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85` |
+| ETH Registrar Controller | `0x253553366Da8546fC250F225fe3d25d0C782303b` |
+| Public Resolver | `0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63` |
+| Universal Resolver | `0xce01f8eee7E479C928F8919abD53E553a36CeF67` |
+| Name Wrapper | `0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401` |
+| Reverse Registrar | `0xa58E81fe9b61B5c3fE2AFD33CF304c454AbFc7Cb` |
+| DNS Registrar | `0xB32cB5677a7C971689228EC835800432394992b8` |
+
+## How Resolution Works
+
+When a client resolves a name like `alice.eth`, the flow is:
+
+<Steps>
+  <Step title="Query the Registry">
+    Call `registry.resolver(namehash('alice.eth'))` to find which resolver contract is assigned to the name.
+  </Step>
+  <Step title="Query the Resolver">
+    Call the resolver's method for the record you need — for example `addr(node)` for an ETH address or `text(node, 'twitter')` for a text record.
+  </Step>
+  <Step title="Handle CCIP-Read (if needed)">
+    If the resolver reverts with an `OffchainLookup` error, follow the EIP-3668 callback protocol to fetch data from an L2 or offchain gateway.
+  </Step>
+</Steps>
+
+The **Universal Resolver** combines all three steps into a single contract call, making it the recommended entry point for library developers.
+
+## TLD Ownership
+
+Each top-level domain is governed by a dedicated registrar contract:
+
+| TLD | Registrar |
+|---|---|
+| `.eth` | ETH Registrar |
+| `.com`, `.xyz`, and other DNS names | DNS Registrar |
+| `.addr.reverse` | Reverse Registrar |
+| `[root]` | ENS Registry (owned by ENS DAO) |
+
+## Source Code
+
+All ENS contracts are open source. You can audit, fork, and integrate directly from the canonical repository.
+
+<Card title="ensdomains/ens-contracts" icon="github" href="https://github.com/ensdomains/ens-contracts">
+  Source code, deployment addresses, tests, and changelogs for all ENS smart contracts.
+</Card>
+
+## What's Next: ENSv2
+
+ENSv2 is the next-generation ENS protocol with native L2 support, hierarchical registries, and role-based permissions. L1 ENS continues to operate fully during development.
+
+<Card title="ENSv2 Overview" icon="rocket" href="/contracts/ensv2">
+  Learn about the architectural changes coming in ENSv2, including hierarchical registries and the new permissions model.
+</Card>

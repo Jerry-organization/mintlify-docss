@@ -1,0 +1,96 @@
+---
+title: "ENS DAO: Governing the ENS Protocol"
+sidebarTitle: "Overview"
+description: "Learn how the ENS DAO works, who controls what, how working groups operate, and where to participate in ENS governance."
+---
+
+The ENS DAO (Decentralized Autonomous Organization) is the governing body of the Ethereum Name Service protocol. Every $ENS token holder has a voice in shaping ENS — from registration fees and registrar upgrades to treasury allocation and public goods funding. The DAO operates through open on-chain voting, an elected steward system, and a transparent governance forum where anyone can participate.
+
+## What the ENS DAO Controls
+
+The ENS DAO has authority over the core levers of the ENS protocol. Through governance proposals, token holders collectively decide on:
+
+- **TLD policy** — which top-level domains ENS supports or integrates
+- **Registrar upgrades** — changes to the smart contracts that handle name registration
+- **Pricing changes** — registration and renewal fee structures
+- **Treasury allocation** — how DAO funds are deployed toward development and operations
+- **Public goods funding** — grants and support for Ethereum and web3 public goods
+
+<Note>
+  The ENS Foundation, a Cayman Islands foundation company, acts as the legal wrapper for DAO decisions — giving the DAO legal standing to enter contracts and interact with the traditional world while remaining decentralized on-chain.
+</Note>
+
+## Working Groups
+
+Day-to-day operations of the ENS DAO are organized into working groups, each led by elected Stewards. Stewards serve one-year terms and are responsible for managing budgets, running public meetings, and coordinating contributors within their group.
+
+<AccordionGroup>
+  <Accordion title="ENS Labs">
+    ENS Labs is the core development team behind the ENS protocol. While not a working group in the traditional DAO sense, ENS Labs operates under a service provider agreement with the DAO and drives protocol development, tooling, and integrations.
+  </Accordion>
+  <Accordion title="Ecosystem Working Group">
+    The Ecosystem working group focuses on growing the ENS ecosystem — supporting integrations, developer tooling, hackathons, and community initiatives that expand ENS adoption across the web3 space.
+  </Accordion>
+  <Accordion title="Public Goods Working Group">
+    The Public Goods working group funds projects that benefit Ethereum and the broader internet commons. This includes retroactive funding, grants to open-source projects, and sponsorships aligned with the ENS Constitution's mandate.
+  </Accordion>
+  <Accordion title="Meta-Governance Working Group">
+    The Meta-Governance (Metagov) working group stewards the governance process itself — maintaining the rules of operation, managing DAO-wide proposals, overseeing budgets across working groups, and ensuring the health of the governance system.
+  </Accordion>
+</AccordionGroup>
+
+## The Security Council
+
+The ENS DAO Security Council is a 4-of-8 multisig that exists as a safety mechanism for emergency situations. Unlike the full governance process, the Security Council can act quickly to cancel malicious proposals before they execute.
+
+The Security Council may intervene when:
+
+- A proposal violates the [ENS Constitution](/dao/constitution)
+- A proposal is approved with malicious intent against the DAO's longevity or treasury
+- Voters are financially incentivized to act against the DAO's interests
+- An approved proposal would directly benefit an attacker at the DAO's expense
+
+<Warning>
+  The Security Council **cannot** propose, amend, or initiate governance actions — its authority is strictly limited to canceling harmful proposals within the timelock period. Its cancel authority is also time-limited and will be permanently disabled two years after deployment to promote further decentralization.
+</Warning>
+
+The Security Council contract is deployed at [`0xb8fa0ce3f91f41c5292d07475b445c35ddf63ee0`](https://etherscan.io/address/0xb8fa0ce3f91f41c5292d07475b445c35ddf63ee0) on Ethereum Mainnet.
+
+## Key Governance Resources
+
+Use these official channels to follow and participate in ENS governance:
+
+<CardGroup cols={2}>
+  <Card title="Governance Forum" icon="comments" href="https://discuss.ens.domains">
+    The primary hub for governance discussion, temperature checks, draft proposals, and working group updates. Register for an account to post and engage.
+  </Card>
+  <Card title="Snapshot Voting" icon="ballot-check" href="https://vote.ensdao.org">
+    Cast off-chain votes on active temperature checks and social proposals. Voting weight is determined by your delegated $ENS balance at the proposal snapshot block.
+  </Card>
+  <Card title="On-Chain Governance (Anticapture)" icon="landmark" href="https://app.anticapture.com/ens">
+    Submit and vote on binding executable proposals on-chain. Delegate your $ENS voting power and track active proposals.
+  </Card>
+  <Card title="ENS App" icon="globe" href="https://app.ens.domains">
+    Register and manage ENS names, and delegate your $ENS voting power directly from the ENS app.
+  </Card>
+  <Card title="ENS DAO on X" icon="x-twitter" href="https://twitter.com/ENS_DAO">
+    Follow the official ENS DAO account for governance announcements, proposal alerts, and community updates.
+  </Card>
+  <Card title="ENS Protocol on X" icon="x-twitter" href="https://x.com/ensdomains">
+    Follow the official ENS protocol account for product updates, integrations, and ecosystem news.
+  </Card>
+</CardGroup>
+
+## How to Get Involved
+
+You don't need to be a developer or hold a large amount of $ENS to participate in ENS governance. Here are the main ways to contribute:
+
+- **Vote on proposals** — delegate your $ENS and cast votes on active governance proposals
+- **Delegate your tokens** — if you prefer not to vote yourself, delegate your voting power to an active community member
+- **Discuss on the forum** — share your perspective on proposals and governance direction at [discuss.ens.domains](https://discuss.ens.domains)
+- **Submit a proposal** — bring your ideas to the DAO by following the [governance process](/dao/proposals)
+- **Apply as a Steward** — Steward elections happen annually on December 10 and are open to any community member
+
+<Tip>
+  New to ENS governance? Start by delegating your $ENS tokens and reading active discussions on the [governance forum](https://discuss.ens.domains). You'll quickly get a sense of the community's priorities and how decisions get made.
+</Tip>

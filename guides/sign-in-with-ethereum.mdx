@@ -1,0 +1,269 @@
+---
+title: "Sign-In with Ethereum: ENS-Enhanced Auth"
+sidebarTitle: "SIWE"
+description: "Learn how to implement Sign-In with Ethereum (EIP-4361) and enhance the experience with ENS name resolution for human-readable user identities."
+---
+
+Sign-In with Ethereum (SIWE, [EIP-4361](https://eips.ethereum.org/EIPS/eip-4361)) lets users authenticate with their Ethereum wallet instead of a username and password. The user signs a structured message, your server verifies the signature, and the session is established — no passwords, no email, no centralized auth provider.
+
+ENS amplifies SIWE by letting you display `alice.eth` in your UI instead of `0xb8c2…67d5`. The two technologies are a natural fit: SIWE proves control of an address, and ENS gives that address a human face.
+
+---
+
+## How SIWE Works
+
+<Steps>
+  <Step title="Generate a SIWE message">
+    Your server creates a structured message that identifies your app, the user's address, a nonce, and the timestamp. The message follows a canonical format so wallets can display it clearly.
+  </Step>
+  <Step title="User signs the message">
+    The user's wallet presents the message and asks for a signature. No transaction is sent — this is a free off-chain signature.
+  </Step>
+  <Step title="Server verifies the signature">
+    Your server receives the signature and verifies it against the message. A valid signature proves the user controls the address in the message.
+  </Step>
+  <Step title="Resolve the ENS name (optional)">
+    After verification, resolve the address to an ENS primary name. Display the name in your UI instead of the raw address.
+  </Step>
+</Steps>
+
+---
+
+## Installation
+
+```bash
+npm install siwe viem
+```
+
+---
+
+## Full Implementation
+
+### Client Side
+
+```ts
+import { BrowserProvider } from 'ethers'
+import { SiweMessage } from 'siwe'
+
+async function signIn() {
+  // 1. Connect to the user's wallet
+  const provider = new BrowserProvider(window.ethereum)
+  await provider.send('eth_requestAccounts', [])
+  const signer = await provider.getSigner()
+  const address = await signer.getAddress()
+
+  // 2. Fetch a nonce from your server (prevents replay attacks)
+  const nonceRes = await fetch('/api/auth/nonce')
+  const { nonce } = await nonceRes.json()
+
+  // 3. Build the SIWE message
+  const message = new SiweMessage({
+    domain: window.location.host,
+    address,
+    statement: 'Sign in to MyApp with your Ethereum account.',
+    uri: window.location.origin,
+    version: '1',
+    chainId: 1,
+    nonce,
+  })
+
+  const preparedMessage = message.prepareMessage()
+
+  // 4. Ask the user to sign
+  const signature = await signer.signMessage(preparedMessage)
+
+  // 5. Send the message + signature to your server
+  const verifyRes = await fetch('/api/auth/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: preparedMessage, signature }),
+  })
+
+  const session = await verifyRes.json()
+  console.log('Signed in as:', session.displayName) // ENS name or address
+}
+```
+
+### Server Side (Node.js)
+
+```ts
+import { createPublicClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+import { SiweMessage } from 'siwe'
+
+const client = createPublicClient({ chain: mainnet, transport: http() })
+
+// In-memory nonce store — use Redis or a database in production
+const nonces = new Set<string>()
+
+// GET /api/auth/nonce
+export async function getNonce() {
+  const nonce = crypto.randomUUID()
+  nonces.add(nonce)
+  return { nonce }
+}
+
+// POST /api/auth/verify
+export async function verify(body: { message: string; signature: string }) {
+  const siweMessage = new SiweMessage(body.message)
+
+  // 1. Verify the signature and message integrity
+  const { data: fields, error } = await siweMessage.verify({
+    signature: body.signature,
+    domain: 'myapp.com',
+    nonce: siweMessage.nonce,
+  })
+
+  if (error || !fields) {
+    throw new Error('Invalid signature')
+  }
+
+  // 2. Consume the nonce (prevent replay)
+  if (!nonces.has(fields.nonce)) {
+    throw new Error('Unknown or already-used nonce')
+  }
+  nonces.delete(fields.nonce)
+
+  const address = fields.address as `0x${string}`
+
+  // 3. Resolve the ENS primary name
+  const ensName = await client.getEnsName({ address })
+
+  // 4. Verify forward resolution matches (prevents spoofing)
+  let displayName = address
+  if (ensName) {
+    const { normalize } = await import('viem/ens')
+    const forwardAddress = await client.getEnsAddress({
+      name: normalize(ensName),
+    })
+    if (forwardAddress?.toLowerCase() === address.toLowerCase()) {
+      displayName = ensName
+    }
+  }
+
+  // 5. Create session — store address and display name
+  return {
+    address,
+    displayName,
+    authenticated: true,
+  }
+}
+```
+
+---
+
+## Displaying ENS Names After Sign-In
+
+Once you have a verified session, use the resolved ENS name throughout your app:
+
+```tsx
+import { useSession } from 'next-auth/react' // or your own session hook
+
+export function UserGreeting() {
+  const { data: session } = useSession()
+
+  if (!session) return <button onClick={signIn}>Sign In</button>
+
+  return (
+    <div>
+      <p>Welcome, {session.user.displayName}</p>
+      {/* Show the raw address in a tooltip or secondary line */}
+      <small title={session.user.address}>
+        {session.user.address.slice(0, 6)}…{session.user.address.slice(-4)}
+      </small>
+    </div>
+  )
+}
+```
+
+---
+
+## Forward Verification is Required
+
+<Warning>
+  Always verify that the resolved ENS name forward-resolves back to the authenticated address before displaying it. Without this check, a user could set a reverse record pointing to a name they don't control the forward record for, potentially impersonating another identity.
+
+  ```ts
+  // ✅ Safe: verify before display
+  const name = await client.getEnsName({ address })
+  if (name) {
+    const forward = await client.getEnsAddress({ name: normalize(name) })
+    if (forward?.toLowerCase() === address.toLowerCase()) {
+      // Safe to display the name
+    }
+  }
+
+  // ❌ Unsafe: never display without verification
+  const name = await client.getEnsName({ address })
+  displayName = name // could be misleading
+  ```
+</Warning>
+
+---
+
+## Fetching the ENS Profile After Sign-In
+
+After authentication you can enrich the session with the user's full ENS profile:
+
+```ts
+import { createEnsPublicClient } from '@ensdomains/ensjs'
+import { http } from 'viem'
+import { mainnet } from 'viem/chains'
+import { normalize } from 'viem/ens'
+
+const ensClient = createEnsPublicClient({ chain: mainnet, transport: http() })
+
+async function getEnrichedProfile(address: `0x${string}`) {
+  const name = await ensClient.getEnsName({ address })
+  if (!name) return { address }
+
+  const records = await ensClient.getRecords({
+    name: normalize(name),
+    texts: ['avatar', 'description', 'com.twitter', 'url'],
+    contentHash: false,
+  })
+
+  return {
+    address,
+    name,
+    avatar: records.texts.find((t) => t.key === 'avatar')?.value ?? null,
+    description: records.texts.find((t) => t.key === 'description')?.value ?? null,
+    twitter: records.texts.find((t) => t.key === 'com.twitter')?.value ?? null,
+    url: records.texts.find((t) => t.key === 'url')?.value ?? null,
+  }
+}
+```
+
+---
+
+## SIWE Message Format
+
+A fully-formed SIWE message looks like this:
+
+```
+myapp.com wants you to sign in with your Ethereum account:
+0xb8c2C29ee19D8307cb7255e1Cd9CbDE883A267d5
+
+Sign in to MyApp with your Ethereum account.
+
+URI: https://myapp.com
+Version: 1
+Chain ID: 1
+Nonce: a3f8c2d1e9b4
+Issued At: 2024-01-15T12:00:00.000Z
+```
+
+The user's wallet renders this message clearly. Fields like `domain` and `uri` let wallets warn users if the signing request comes from a mismatched origin.
+
+<Tip>
+  Use the official [`siwe`](https://docs.siwe.xyz/) npm package to generate and verify SIWE messages. It handles message serialization, field validation, and signature verification correctly so you don't have to implement EIP-4361 from scratch.
+</Tip>
+
+---
+
+## Resources
+
+- [EIP-4361 Specification](https://eips.ethereum.org/EIPS/eip-4361)
+- [SIWE Documentation](https://docs.siwe.xyz/)
+- [SIWE Libraries](https://docs.siwe.xyz/libraries/)
+- [ENS Primary Names Guide](/guides/primary-names)
